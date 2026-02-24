@@ -9,6 +9,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./instance": {
+      "types": "./dist/instance.d.ts",
+      "default": "./dist/instance.js"
     }
   },
   "scripts": {
@@ -17,6 +21,7 @@
     "dev": "tsc --watch"
   },
   "devDependencies": {
+    "@types/node": "^25.3.0",
     "typescript": "^5.7.0"
   }
 }

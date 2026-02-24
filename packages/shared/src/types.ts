@@ -25,6 +25,7 @@ export interface CreateSessionRequest {
   skipPermissions?: boolean;
   claudeArgs?: string;
   claudeResumeId?: string;
+  forkSession?: boolean;
   backend?: SessionBackend;
 }
 

@@ -62,9 +62,11 @@ export const SessionNode = memo(function SessionNode({ data }: Props) {
         name: `${session.name} (fork)`,
         workspacePath: session.workspacePath,
         type: 'claude',
+        backend: session.backend,
         skipPermissions: workspaceSettings?.skipPermissions,
         claudeArgs: workspaceSettings?.claudeArgs,
         claudeResumeId: session.claudeSessionId,
+        forkSession: true,
       });
       addSession(forked);
       setActiveSession(forked.id);
@@ -173,7 +175,7 @@ export const SessionNode = memo(function SessionNode({ data }: Props) {
               onClick={handleFork}
               disabled={forking}
               className="p-1 rounded text-text-muted hover:text-text-primary transition-colors disabled:opacity-50"
-              title="Fork conversation"
+              title={`Fork: claude --resume ${session.claudeSessionId} --fork-session${workspaceSettings?.skipPermissions ? ' --dangerously-skip-permissions' : ''}${workspaceSettings?.claudeArgs ? ` ${workspaceSettings.claudeArgs}` : ''}`}
             >
               <GitFork size={12} />
             </button>
@@ -239,10 +241,19 @@ export const SessionNode = memo(function SessionNode({ data }: Props) {
       {/* Terminal preview — nodrag/nowheel/nopan to prevent ReactFlow conflicts */}
       <div
         className="flex-1 bg-[#0a0a0f] rounded-b-xl mx-1 mt-1 overflow-hidden relative min-h-0 nodrag nopan"
-        onClick={() => isActive && setActiveSession(session.id)}
       >
         {isActive ? (
-          <TerminalView sessionId={session.id} isSelected={isSelected} />
+          <>
+            <TerminalView sessionId={session.id} isSelected={isSelected} />
+            {/* Click overlay for non-selected sessions: sits above xterm.js so clicks
+                reliably activate the session instead of being consumed by xterm internals */}
+            {!isSelected && (
+              <div
+                className="absolute inset-0 z-10 cursor-pointer"
+                onClick={() => setActiveSession(session.id)}
+              />
+            )}
+          </>
         ) : (
           <div className="absolute inset-0 flex flex-col items-center justify-center text-text-muted text-xs gap-2">
             <span className="opacity-50">

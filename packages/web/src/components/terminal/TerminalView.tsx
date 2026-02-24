@@ -45,6 +45,45 @@ export function TerminalView({ sessionId, isSelected }: TerminalViewProps) {
     return () => container.removeEventListener('wheel', handler);
   }, []);
 
+  // Fix xterm.js mouse coordinates under ReactFlow CSS transforms.
+  // ReactFlow applies transform: translate(X,Y) scale(Z) on .react-flow__viewport.
+  // xterm.js calculates cell position as: (clientX - rect.left) / cssCellWidth
+  // getBoundingClientRect() returns the scaled rect, but cssCellWidth is unscaled,
+  // so at zoom != 1 the cell calculation is wrong. We fix this by adjusting
+  // clientX/clientY in the capture phase before xterm.js sees the events.
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const adjustMouseCoords = (e: MouseEvent) => {
+      // Read scale directly from the ReactFlow viewport transform
+      const viewport = container.closest('.react-flow__viewport') as HTMLElement | null;
+      if (!viewport) return;
+      const match = viewport.style.transform.match(/scale\(([^)]+)\)/);
+      const zoom = match ? parseFloat(match[1]) : 1;
+      if (zoom === 1) return;
+
+      const rect = container.getBoundingClientRect();
+      // Convert screen-space offset to unscaled offset
+      Object.defineProperty(e, 'clientX', {
+        value: rect.left + (e.clientX - rect.left) / zoom,
+      });
+      Object.defineProperty(e, 'clientY', {
+        value: rect.top + (e.clientY - rect.top) / zoom,
+      });
+    };
+
+    // Capture phase fires before xterm.js's bubble-phase listeners
+    container.addEventListener('mousedown', adjustMouseCoords, { capture: true });
+    container.addEventListener('mousemove', adjustMouseCoords, { capture: true });
+    container.addEventListener('mouseup', adjustMouseCoords, { capture: true });
+    return () => {
+      container.removeEventListener('mousedown', adjustMouseCoords, { capture: true });
+      container.removeEventListener('mousemove', adjustMouseCoords, { capture: true });
+      container.removeEventListener('mouseup', adjustMouseCoords, { capture: true });
+    };
+  }, []);
+
   // Create terminal once on mount — same sizing for both modes
   useEffect(() => {
     const container = containerRef.current;
@@ -82,9 +121,22 @@ export function TerminalView({ sessionId, isSelected }: TerminalViewProps) {
       return true;
     });
 
-    // Subscribe with preview — live data only, no scrollback replay
+    // Subscribe with preview — live data only, no scrollback replay.
+    // Batch writes via requestAnimationFrame to avoid starving the event loop
+    // during high-frequency streaming (prevents click events from being dropped).
+    let writeBuffer = '';
+    let rafId: number | null = null;
     const unsubscribe = terminalChannel.subscribe(sessionId, (data) => {
-      term.write(data);
+      writeBuffer += data;
+      if (rafId === null) {
+        rafId = requestAnimationFrame(() => {
+          if (writeBuffer) {
+            term.write(writeBuffer);
+            writeBuffer = '';
+          }
+          rafId = null;
+        });
+      }
     }, { preview: true });
 
     const removeConnectionHandler = terminalChannel.onConnectionChange((connected) => {
@@ -95,6 +147,7 @@ export function TerminalView({ sessionId, isSelected }: TerminalViewProps) {
     return () => {
       unsubscribe();
       removeConnectionHandler();
+      if (rafId !== null) cancelAnimationFrame(rafId);
       term.dispose();
       termRef.current = null;
     };

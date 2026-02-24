@@ -35,6 +35,7 @@ import { AgentService } from './services/agent.service.js';
 import { setupTerminalProxy } from './ws/terminal-proxy.js';
 import { setupTerminalChannel } from './ws/terminal-channel.js';
 import { setupPresence } from './ws/presence.js';
+import { registerInstance, deregisterInstance } from '@claude-air/shared/instance';
 
 const log = pino({
   name: 'was',
@@ -133,11 +134,14 @@ server.listen(config.port, config.host, () => {
     host: config.host,
     smsUrl: config.smsUrl,
   }, `WAS server started on http://${config.host}:${config.port}`);
+
+  registerInstance('was', config.port, import.meta.url);
 });
 
 // Graceful shutdown
 function shutdown() {
   log.info('shutting down...');
+  deregisterInstance('was', import.meta.url);
   io.close();
   closeDb();
   server.close();

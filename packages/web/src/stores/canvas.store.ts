@@ -50,6 +50,23 @@ export interface SavedLayout {
 
 const norm = (p: string) => p.toLowerCase().replace(/\//g, '\\');
 
+/**
+ * Compare session node data ignoring volatile fields (lastActivity, viewers)
+ * that change frequently but don't affect visual rendering.
+ * This prevents unnecessary re-renders during active terminal streaming.
+ */
+function sessionDataChanged(existing: SessionNodeData, fresh: SessionNodeData): boolean {
+  const s1 = existing.session;
+  const s2 = fresh.session;
+  return s1.id !== s2.id
+    || s1.name !== s2.name
+    || s1.status !== s2.status
+    || s1.claudeSessionId !== s2.claudeSessionId
+    || s1.backend !== s2.backend
+    || s1.type !== s2.type
+    || existing.workspaceId !== fresh.workspaceId;
+}
+
 const WORKSPACE_GAP = 60;
 
 /**
@@ -287,12 +304,18 @@ export const useCanvasStore = create<CanvasState>()((set, get) => ({
       const existing = currentMap.get(fresh.id);
       if (existing) {
         // Keep position + style (user may have resized/moved)
-        // Update data payload (status, viewers, metadata)
-        const dataChanged = JSON.stringify(existing.data) !== JSON.stringify(fresh.data);
+        // Only update data when visually-relevant fields change
+        const isWorkspace = fresh.type === 'workspaceBubble';
+        const isSession = fresh.type === 'sessionNode';
+
+        // For sessions, use targeted comparison that skips volatile fields
+        // (lastActivity changes on every keystroke during streaming)
+        const dataChanged = isSession
+          ? sessionDataChanged(existing.data as SessionNodeData, fresh.data as SessionNodeData)
+          : JSON.stringify(existing.data) !== JSON.stringify(fresh.data);
 
         // For workspace bubbles, also update style when session count changes
         // so the bubble grows/shrinks to fit its sessions
-        const isWorkspace = fresh.type === 'workspaceBubble';
         const sessionCountChanged = isWorkspace
           && (existing.data as WorkspaceBubbleData).sessionCount
              !== (fresh.data as WorkspaceBubbleData).sessionCount;

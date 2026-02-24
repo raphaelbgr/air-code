@@ -187,8 +187,8 @@ export class SessionService {
 
       this.attachPtyDirect(id, req.workspacePath, req);
 
-      // For new Claude sessions (not resuming), watch for the session file
-      if (sessionType === 'claude' && !initialClaudeId) {
+      // Watch for session file on new sessions or forks (fork creates a new session ID)
+      if (sessionType === 'claude' && (!initialClaudeId || req.forkSession)) {
         this.watchForClaudeSession(id, req.workspacePath);
       }
 
@@ -212,6 +212,7 @@ export class SessionService {
         let claudeCmd = 'claude';
         if (req.claudeResumeId) {
           claudeCmd += ` --resume ${req.claudeResumeId}`;
+          if (req.forkSession) claudeCmd += ' --fork-session';
         }
         if (req.skipPermissions) claudeCmd += ' --dangerously-skip-permissions';
         if (req.claudeArgs) claudeCmd += ` ${req.claudeArgs}`;
@@ -237,12 +238,18 @@ export class SessionService {
     }
 
     const sessionType = req.type || 'claude';
+    const initialClaudeId = req.claudeResumeId || null;
     db.prepare(`
       INSERT INTO sessions (id, name, tmux_session, workspace_path, status, type, skip_permissions, claude_session_id, backend)
       VALUES (?, ?, ?, ?, 'running', ?, ?, ?, 'tmux')
-    `).run(id, req.name, tmuxName, req.workspacePath, sessionType, req.skipPermissions ? 1 : 0, tmuxName);
+    `).run(id, req.name, tmuxName, req.workspacePath, sessionType, req.skipPermissions ? 1 : 0, initialClaudeId);
 
     this.attachControlMode(id, tmuxName);
+
+    // Watch for Claude session ID on new sessions or forks (fork creates a new session ID)
+    if (sessionType === 'claude' && (!initialClaudeId || req.forkSession)) {
+      this.watchForClaudeSession(id, req.workspacePath);
+    }
 
     const row = db.prepare('SELECT * FROM sessions WHERE id = ?').get(id) as SessionRow;
     log.info({ id, tmuxName, workspace: req.workspacePath, mock: this.mockMode }, 'session created');
@@ -280,6 +287,7 @@ export class SessionService {
       let claudeCmd = 'claude';
       if (req.claudeResumeId) {
         claudeCmd += ` --resume ${req.claudeResumeId}`;
+        if (req.forkSession) claudeCmd += ' --fork-session';
       }
       if (req.skipPermissions) claudeCmd += ' --dangerously-skip-permissions';
       if (req.claudeArgs) claudeCmd += ` ${req.claudeArgs}`;

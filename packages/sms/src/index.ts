@@ -11,6 +11,7 @@ import { TranscriptService } from './services/transcript.service.js';
 import { createSessionRoutes } from './routes/sessions.js';
 import { createHealthRoutes } from './routes/health.js';
 import { setupTerminalWebSocket } from './ws/terminal.handler.js';
+import { registerInstance, deregisterInstance } from '@claude-air/shared/instance';
 
 // Catch-all error handlers to prevent silent hangs
 process.on('uncaughtException', (err) => {
@@ -68,6 +69,8 @@ server.listen(config.port, config.host, () => {
     mock: sessionService.isMockMode,
   }, `SMS server started on http://${config.host}:${config.port}`);
 
+  registerInstance('sms', config.port, import.meta.url);
+
   if (!tmuxAvailable) {
     log.warn('tmux is not installed or not in PATH. Running in MOCK mode.');
   }
@@ -76,6 +79,7 @@ server.listen(config.port, config.host, () => {
 // Graceful shutdown
 function shutdown() {
   log.info('shutting down...');
+  deregisterInstance('sms', import.meta.url);
   closeDb();
   server.close();
   process.exit(0);

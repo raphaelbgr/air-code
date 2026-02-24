@@ -12,6 +12,7 @@ const CreateSessionSchema = z.object({
   skipPermissions: z.boolean().optional().default(false),
   claudeArgs: z.string().optional(),
   claudeResumeId: z.string().optional(),
+  forkSession: z.boolean().optional(),
 });
 
 const SendKeysSchema = z.object({

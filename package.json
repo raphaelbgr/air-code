@@ -6,7 +6,7 @@
     "dev:sms": "pnpm --filter @claude-air/sms dev",
     "dev:was": "pnpm --filter @claude-air/was dev",
     "dev:web": "pnpm --filter @claude-air/web dev",
-    "kill-all": "bash scripts/kill-all.sh",
+    "kill-all": "python scripts/kill-all.py",
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck"
   },

@@ -24,11 +24,6 @@ interface SessionEntry {
   diskSize: number;
 }
 
-interface SessionsIndex {
-  version: number;
-  entries: SessionEntry[];
-}
-
 interface ClaudeProjectEntry {
   projectPath: string;
   sessionCount: number;
@@ -108,46 +103,52 @@ async function scanClaudeProjectEntries(): Promise<ClaudeProjectEntry[]> {
       continue;
     }
 
-    const indexPath = join(entryPath, 'sessions-index.json');
     let projectPath: string | null = null;
     let sessionCount = 0;
     let lastActive = '';
 
+    // Count .jsonl files and extract projectPath from session data.
+    // sessions-index.json is deprecated since Claude Code v2.1.31; scan .jsonl directly.
     try {
-      const raw = await readFile(indexPath, 'utf-8');
-      const index: SessionsIndex = JSON.parse(raw);
+      const dirFiles = await readdir(entryPath);
+      const jsonlFiles = dirFiles.filter(f => f.endsWith('.jsonl'));
+      sessionCount = jsonlFiles.length;
 
-      if (index.entries?.length) {
-        for (const e of index.entries) {
-          if (e.projectPath) {
-            projectPath = e.projectPath;
-            break;
-          }
+      let latestMtime = 0;
+      for (const f of jsonlFiles) {
+        try {
+          const s = await stat(join(entryPath, f));
+          if (s.mtimeMs > latestMtime) latestMtime = s.mtimeMs;
+        } catch { /* skip */ }
+
+        // Extract real project path from first .jsonl that has a cwd field
+        if (!projectPath) {
+          try {
+            const raw = await readFile(join(entryPath, f), 'utf-8');
+            // Read only the first few lines to find cwd (avoid parsing entire file)
+            const lines = raw.split('\n', 10);
+            for (const line of lines) {
+              if (!line) continue;
+              try {
+                const obj = JSON.parse(line);
+                if (obj.cwd) {
+                  projectPath = obj.cwd;
+                  break;
+                }
+                // Fallback: sessions-index.json style entries
+                if (obj.projectPath) {
+                  projectPath = obj.projectPath;
+                  break;
+                }
+              } catch { /* skip malformed lines */ }
+            }
+          } catch { /* skip unreadable files */ }
         }
-        sessionCount = index.entries.length;
-        lastActive = index.entries.reduce((latest, e) =>
-          e.modified > latest ? e.modified : latest, '');
       }
-    } catch {
-      // No sessions-index.json — count .jsonl files directly
-      try {
-        const dirFiles = await readdir(entryPath);
-        const jsonlFiles = dirFiles.filter(f => f.endsWith('.jsonl'));
-        sessionCount = jsonlFiles.length;
-        if (jsonlFiles.length > 0) {
-          // Use the most recent file's mtime as lastActive
-          let latestMtime = 0;
-          for (const f of jsonlFiles) {
-            try {
-              const s = await stat(join(entryPath, f));
-              if (s.mtimeMs > latestMtime) latestMtime = s.mtimeMs;
-            } catch { /* skip */ }
-          }
-          if (latestMtime > 0) lastActive = new Date(latestMtime).toISOString();
-        }
-      } catch { /* skip */ }
-    }
+      if (latestMtime > 0) lastActive = new Date(latestMtime).toISOString();
+    } catch { /* skip */ }
 
+    // Last resort: decode folder name (lossy for paths with hyphens)
     if (!projectPath) {
       projectPath = decodeFolderName(entry);
     }
