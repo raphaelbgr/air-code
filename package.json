@@ -2,10 +2,11 @@
   "name": "claude-code-air",
   "private": true,
   "scripts": {
-    "dev": "concurrently -n sms,was -c blue,green \"pnpm --filter @claude-air/sms dev\" \"pnpm --filter @claude-air/was dev\"",
+    "dev": "concurrently --kill-others -n sms,was -c blue,green \"pnpm --filter @claude-air/sms dev\" \"pnpm --filter @claude-air/was dev\"",
     "dev:sms": "pnpm --filter @claude-air/sms dev",
     "dev:was": "pnpm --filter @claude-air/was dev",
     "dev:web": "pnpm --filter @claude-air/web dev",
+    "kill-all": "bash scripts/kill-all.sh",
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck"
   },

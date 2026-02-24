@@ -13,6 +13,7 @@ import { useMobileDetect } from '@/hooks/useMobileDetect';
 import { useCanvasSync } from '@/hooks/useCanvasSync';
 import { useAuthStore } from '@/stores/auth.store';
 import { useAgentStore } from '@/stores/agent.store';
+import { terminalChannel } from '@/lib/terminal-channel';
 import { useCanvasStore } from '@/stores/canvas.store';
 import { useSessionStore } from '@/stores/session.store';
 import { LogOut, User } from 'lucide-react';
@@ -24,10 +25,18 @@ export function AppLayout() {
   const activeSessionId = useCanvasStore((s) => s.activeSessionId);
   useUpdatePresence(activeSessionId);
 
-  const { user, logout } = useAuthStore();
+  const { token, user, logout } = useAuthStore();
   const agentPanelOpen = useAgentStore((s) => s.panelOpen);
   const { isMobile } = useMobileDetect();
   const fetchAll = useSessionStore((s) => s.fetchAll);
+
+  // Connect/disconnect the multiplexed terminal channel with auth token
+  useEffect(() => {
+    if (token) {
+      terminalChannel.connect(token);
+    }
+    return () => terminalChannel.disconnect();
+  }, [token]);
 
   // Mobile state
   const [mobileSessionId, setMobileSessionId] = useState<string | null>(null);
@@ -42,7 +51,9 @@ export function AppLayout() {
     return () => clearInterval(interval);
   }, [fetchAll]);
 
-  // Cmd+K shortcut
+  const setActiveSession = useCanvasStore((s) => s.setActiveSession);
+
+  // Cmd+K shortcut + Escape to deselect active session
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
@@ -51,11 +62,12 @@ export function AppLayout() {
       }
       if (e.key === 'Escape') {
         setShowSearch(false);
+        setActiveSession(null);
       }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, []);
+  }, [setActiveSession]);
 
   // Mobile: fullscreen terminal
   if (isMobile && mobileSessionId) {

@@ -5,6 +5,7 @@ import type { Workspace, Session } from '@claude-air/shared';
 import type { WorkspaceBubbleData } from '@/types';
 import { api } from '@/lib/api';
 import { useSessionStore } from '@/stores/session.store';
+import { useCanvasStore } from '@/stores/canvas.store';
 import { WorkspaceSettingsDialog } from '@/components/dialogs/WorkspaceSettingsDialog';
 import { ClaudeLauncherDialog } from '@/components/dialogs/ClaudeLauncherDialog';
 
@@ -14,6 +15,7 @@ export const WorkspaceBubble = memo(function WorkspaceBubble({ data }: Props) {
   const { workspace: initialWorkspace, sessionCount, claudeSessionCount } = data;
   const [workspace, setWorkspace] = useState<Workspace>(initialWorkspace);
   const addSession = useSessionStore((s) => s.addSession);
+  const setActiveSession = useCanvasStore((s) => s.setActiveSession);
   const [creatingShell, setCreatingShell] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showLauncher, setShowLauncher] = useState(false);
@@ -28,16 +30,18 @@ export const WorkspaceBubble = memo(function WorkspaceBubble({ data }: Props) {
         type: 'shell',
       });
       addSession(session);
+      setActiveSession(session.id);
     } catch (err) {
       console.error('Failed to create shell session:', err);
     } finally {
       setCreatingShell(false);
     }
-  }, [workspace, creatingShell, addSession]);
+  }, [workspace, creatingShell, addSession, setActiveSession]);
 
   const handleClaudeCreated = useCallback((session: Session) => {
     addSession(session);
-  }, [addSession]);
+    setActiveSession(session.id);
+  }, [addSession, setActiveSession]);
 
   return (
     <div

@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, type FormEvent } from 'react';
 import { X, Send, Bot } from 'lucide-react';
+import { serverNow } from '@claude-air/shared';
 import { useAgentStore } from '@/stores/agent.store';
 import type { AgentMessage } from '@/types';
 const uuid = () => crypto.randomUUID();
@@ -23,7 +24,7 @@ export function AgentPanel() {
       id: uuid(),
       role: 'user',
       content: input.trim(),
-      timestamp: new Date().toISOString(),
+      timestamp: serverNow(),
     };
     addMessage(userMsg);
     setInput('');
@@ -44,7 +45,7 @@ export function AgentPanel() {
         role: 'assistant',
         content: data.data?.content || data.error || 'No response',
         toolCalls: data.data?.toolCalls,
-        timestamp: new Date().toISOString(),
+        timestamp: serverNow(),
       };
       addMessage(assistantMsg);
     } catch (err) {
@@ -52,7 +53,7 @@ export function AgentPanel() {
         id: uuid(),
         role: 'assistant',
         content: `Error: ${err}`,
-        timestamp: new Date().toISOString(),
+        timestamp: serverNow(),
       });
     } finally {
       setLoading(false);

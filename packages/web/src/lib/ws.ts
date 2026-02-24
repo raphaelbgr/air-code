@@ -1,6 +1,9 @@
 import type { WsMessage } from '@claude-air/shared';
 
 /**
+ * @deprecated Use `terminalChannel` from `@/lib/terminal-channel` instead.
+ * Kept for backward compatibility during transition.
+ *
  * Create a WebSocket connection for terminal I/O.
  * Returns the WebSocket instance for direct event handling.
  */

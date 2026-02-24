@@ -128,7 +128,8 @@ export function createWorkspaceRoutes(smsProxy: SmsProxy): Router {
       const rows = db.prepare('SELECT * FROM workspaces ORDER BY created_at DESC').all() as WorkspaceRow[];
       const workspaces = rows.map(rowToWorkspace);
 
-      const statsMap = await getClaudeStatsMap();
+      const paths = workspaces.map(ws => ws.path).filter((p): p is string => !!p);
+      const statsMap = await getClaudeStatsMap(paths);
       const normalizePath = (p: string) => process.platform === 'win32' ? p.toLowerCase().replace(/\//g, '\\') : p;
       for (const ws of workspaces) {
         if (ws.path) {

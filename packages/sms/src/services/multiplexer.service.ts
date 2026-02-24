@@ -118,7 +118,7 @@ export class SessionMultiplexer {
   broadcast(data: string): void {
     this.scrollback.push(data);
     if (this.clients.size > 0) {
-      log.info({ sessionId: this.sessionId, clients: this.clients.size, bytes: data.length }, 'broadcasting data');
+      log.debug({ sessionId: this.sessionId, clients: this.clients.size, bytes: data.length }, 'broadcasting data');
     }
     const payload = JSON.stringify({
       type: 'terminal:data',

@@ -33,6 +33,7 @@ import { createHealthRoutes } from './routes/health.js';
 import { createAgentRoutes } from './routes/agent.js';
 import { AgentService } from './services/agent.service.js';
 import { setupTerminalProxy } from './ws/terminal-proxy.js';
+import { setupTerminalChannel } from './ws/terminal-channel.js';
 import { setupPresence } from './ws/presence.js';
 
 const log = pino({
@@ -94,6 +95,15 @@ app.use(errorHandler);
 const terminalWss = new WebSocketServer({ noServer: true });
 setupTerminalProxy(terminalWss, authService, smsProxy);
 
+// WebSocket: multiplexed terminal channel (1 WS per browser, routes by sessionId)
+const terminalChannelWss = new WebSocketServer({ noServer: true });
+const terminalChannelApi = setupTerminalChannel(terminalChannelWss, authService, smsProxy);
+
+// Diagnostic endpoint for terminal channel stats
+app.get('/api/debug/channel', (_req, res) => {
+  res.json(terminalChannelApi.getStats());
+});
+
 // Socket.IO: presence (with JWT in handshake.auth)
 const io = new SocketIOServer(server, {
   cors: { origin: '*' },
@@ -104,7 +114,11 @@ setupPresence(io, authService, presenceService);
 // Route WebSocket upgrades: terminal goes to ws, everything else to Socket.IO
 server.on('upgrade', (req, socket, head) => {
   const pathname = req.url?.split('?')[0];
-  if (pathname === '/ws/terminal') {
+  if (pathname === '/ws/terminals') {
+    terminalChannelWss.handleUpgrade(req, socket, head, (ws) => {
+      terminalChannelWss.emit('connection', ws, req);
+    });
+  } else if (pathname === '/ws/terminal') {
     terminalWss.handleUpgrade(req, socket, head, (ws) => {
       terminalWss.emit('connection', ws, req);
     });

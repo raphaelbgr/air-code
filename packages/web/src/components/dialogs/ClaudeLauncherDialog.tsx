@@ -2,26 +2,13 @@ import { useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Plus, MessageSquare, Loader2 } from 'lucide-react';
 import type { Workspace, ClaudeSession, Session } from '@claude-air/shared';
+import { formatRelative } from '@claude-air/shared';
 import { api } from '@/lib/api';
 
 interface Props {
   workspace: Workspace;
   onClose: () => void;
   onCreated: (session: Session) => void;
-}
-
-function timeAgo(dateStr: string): string {
-  const date = new Date(dateStr);
-  const now = Date.now();
-  const diff = now - date.getTime();
-  const minutes = Math.floor(diff / 60_000);
-  if (minutes < 1) return 'just now';
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  if (days === 1) return 'yesterday';
-  return `${days}d ago`;
 }
 
 export function ClaudeLauncherDialog({ workspace, onClose, onCreated }: Props) {
@@ -119,7 +106,7 @@ export function ClaudeLauncherDialog({ workspace, onClose, onCreated }: Props) {
                     <div className="min-w-0 flex-1">
                       <div className="text-sm text-text-primary truncate">{cs.summary}</div>
                       <div className="text-xs text-text-muted">
-                        {cs.messageCount} message{cs.messageCount !== 1 ? 's' : ''} · {timeAgo(cs.lastActive)}
+                        {cs.messageCount} message{cs.messageCount !== 1 ? 's' : ''} · {formatRelative(cs.lastActive)}
                       </div>
                     </div>
                   </button>

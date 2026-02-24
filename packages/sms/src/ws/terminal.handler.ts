@@ -14,6 +14,10 @@ export function setupTerminalWebSocket(
   multiplexers: MultiplexerRegistry,
 ): void {
   wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
+    // Disable Nagle's algorithm — flush keystrokes immediately
+    const socket = (ws as any)._socket;
+    if (socket?.setNoDelay) socket.setNoDelay(true);
+
     // Extract session ID from URL: /ws/terminal?sessionId=xxx or /ws/terminal/:id
     const url = new URL(req.url || '', `http://${req.headers.host}`);
     const sessionId = url.searchParams.get('sessionId')
@@ -33,6 +37,11 @@ export function setupTerminalWebSocket(
 
     const isPreview = url.searchParams.get('preview') === 'true';
     const clientId = uuid();
+
+    // Lazy PTY attachment: spawn the PTY only when the first client connects.
+    // This avoids spawning 30+ PTY processes simultaneously on server startup.
+    sessionService.ensureAttached(sessionId);
+
     const mux = multiplexers.getOrCreate(sessionId);
     mux.addClient(clientId, ws, isPreview);
 

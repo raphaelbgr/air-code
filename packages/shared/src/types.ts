@@ -127,7 +127,10 @@ export type WsMessageType =
   | 'terminal:data'
   | 'terminal:resize'
   | 'terminal:resized'
-  | 'terminal:input';
+  | 'terminal:input'
+  | 'terminal:subscribe'
+  | 'terminal:unsubscribe'
+  | 'terminal:error';
 
 export interface WsMessage {
   type: WsMessageType;
@@ -135,6 +138,9 @@ export interface WsMessage {
   data?: string;
   cols?: number;
   rows?: number;
+  preview?: boolean;
+  error?: string;
+  code?: number;
 }
 
 // ── Agent types ──

@@ -174,35 +174,31 @@ async function detectFromClaudeProjects(existingPaths: Set<string>): Promise<Det
 // Cache for getClaudeStatsMap to avoid filesystem reads on every 5s poll
 let _statsCache: Map<string, { sessionCount: number; lastActive: string }> | null = null;
 let _statsCacheTime = 0;
+let _statsCacheKey = '';
 const STATS_CACHE_TTL = 30_000; // 30 seconds
 
 /**
  * Build a map of workspace path to Claude Code session stats.
- * Scans .jsonl files directly (sessions-index.json is deprecated and often stale).
- * Only counts sessions with actual messages (messageCount > 0).
+ * Accepts known workspace paths and uses encodeFolderName (lossless) to find
+ * the matching Claude projects folder — avoids decodeFolderName which is lossy
+ * for paths containing hyphens.
  * Results are cached for 30 seconds to avoid excessive filesystem reads.
  */
-export async function getClaudeStatsMap(): Promise<Map<string, { sessionCount: number; lastActive: string }>> {
-  if (_statsCache && Date.now() - _statsCacheTime < STATS_CACHE_TTL) {
+export async function getClaudeStatsMap(
+  workspacePaths: string[]
+): Promise<Map<string, { sessionCount: number; lastActive: string }>> {
+  const cacheKey = workspacePaths.join('|');
+  if (_statsCache && Date.now() - _statsCacheTime < STATS_CACHE_TTL && _statsCacheKey === cacheKey) {
     return _statsCache;
   }
 
   const projectsDir = join(homedir(), '.claude', 'projects');
   const result = new Map<string, { sessionCount: number; lastActive: string }>();
 
-  let folders: string[];
-  try {
-    folders = await readdir(projectsDir);
-  } catch {
-    _statsCache = result;
-    _statsCacheTime = Date.now();
-    return result;
-  }
+  for (const wsPath of workspacePaths) {
+    const folderName = encodeFolderName(wsPath);
+    const folderPath = join(projectsDir, folderName);
 
-  for (const folder of folders) {
-    if (folder.startsWith('-') || folder.startsWith('.')) continue;
-
-    const folderPath = join(projectsDir, folder);
     try {
       const s = await stat(folderPath);
       if (!s.isDirectory()) continue;
@@ -210,17 +206,16 @@ export async function getClaudeStatsMap(): Promise<Map<string, { sessionCount: n
       continue;
     }
 
-    const projectPath = decodeFolderName(folder);
-    const sessions = await scanJsonlSessions(folderPath, projectPath);
-
+    const sessions = await scanJsonlSessions(folderPath, wsPath);
     if (sessions.length > 0) {
       const lastActive = sessions[0].modified; // already sorted newest-first
-      result.set(normalizePath(projectPath), { sessionCount: sessions.length, lastActive });
+      result.set(normalizePath(wsPath), { sessionCount: sessions.length, lastActive });
     }
   }
 
   _statsCache = result;
   _statsCacheTime = Date.now();
+  _statsCacheKey = cacheKey;
   return result;
 }
 

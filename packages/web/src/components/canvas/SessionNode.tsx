@@ -3,8 +3,9 @@ import { type NodeProps, NodeResizer } from '@xyflow/react';
 import { Terminal, Sparkles, Circle, Trash2, Monitor, Copy, Check, X, GitFork } from 'lucide-react';
 import type { SessionNodeData } from '@/types';
 import { useSessionStore } from '@/stores/session.store';
+import { useCanvasStore } from '@/stores/canvas.store';
 import { api } from '@/lib/api';
-import { MiniTerminalView } from '../terminal/MiniTerminalView';
+import { TerminalView } from '../terminal/TerminalView';
 import { UserAvatarStack } from '../presence/UserAvatarStack';
 
 type Props = NodeProps & { data: SessionNodeData };
@@ -20,6 +21,8 @@ export const SessionNode = memo(function SessionNode({ data }: Props) {
   const { session, workspaceSettings, viewers } = data;
   const addSession = useSessionStore((s) => s.addSession);
   const removeSession = useSessionStore((s) => s.removeSession);
+  const activeSessionId = useCanvasStore((s) => s.activeSessionId);
+  const setActiveSession = useCanvasStore((s) => s.setActiveSession);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [forking, setForking] = useState(false);
@@ -62,19 +65,37 @@ export const SessionNode = memo(function SessionNode({ data }: Props) {
         claudeResumeId: session.claudeSessionId,
       });
       addSession(forked);
+      setActiveSession(forked.id);
     } catch (err) {
       console.error('Fork session failed:', err);
     } finally {
       setForking(false);
     }
-  }, [session, forking, workspaceSettings, addSession]);
+  }, [session, forking, workspaceSettings, addSession, setActiveSession]);
 
   const isClaude = session.type === 'claude' && !!session.claudeSessionId;
   const Icon = isClaude ? Sparkles : Terminal;
   const isActive = session.status === 'running' || session.status === 'idle';
+  const isSelected = activeSessionId === session.id;
+
+  // Other users actively viewing this session (for presence border)
+  const activeViewers = viewers.filter(v => v.viewingSessionId === session.id);
+  const viewerBorderColor = activeViewers.length > 0 ? activeViewers[0].avatarColor : null;
 
   return (
-    <div className="w-full h-full rounded-xl bg-bg-secondary border border-border hover:border-border-bright transition-colors flex flex-col">
+    <div
+      className="w-full h-full rounded-xl bg-bg-secondary transition-colors flex flex-col"
+      style={{
+        borderWidth: 2,
+        borderStyle: 'solid',
+        borderColor: isSelected
+          ? '#818cf8'
+          : viewerBorderColor || 'var(--border)',
+        boxShadow: viewerBorderColor && !isSelected
+          ? `0 0 12px ${viewerBorderColor}40`
+          : undefined,
+      }}
+    >
       <NodeResizer
         minWidth={320}
         minHeight={250}
@@ -86,6 +107,11 @@ export const SessionNode = memo(function SessionNode({ data }: Props) {
         <Icon size={14} className="text-text-muted" />
         <span className="text-sm font-medium text-text-primary truncate flex-1">
           {session.name}
+          {isActive && (
+            <span className={`ml-1.5 text-[10px] font-normal ${isSelected ? 'text-accent' : 'text-text-muted'}`}>
+              {isSelected ? '(Active)' : '(Streaming)'}
+            </span>
+          )}
         </span>
 
         {/* Action buttons */}
@@ -168,13 +194,14 @@ export const SessionNode = memo(function SessionNode({ data }: Props) {
       {/* Terminal preview — nodrag/nowheel/nopan to prevent ReactFlow conflicts */}
       <div
         className="flex-1 bg-[#0a0a0f] rounded-b-xl mx-1 mt-1 overflow-hidden relative min-h-0 nodrag nowheel nopan"
+        onClick={() => isActive && setActiveSession(session.id)}
       >
         {isActive ? (
-          <MiniTerminalView sessionId={session.id} active={isActive} />
+          <TerminalView sessionId={session.id} isSelected={isSelected} />
         ) : (
           <div className="absolute inset-0 flex items-center justify-center text-text-muted text-xs">
             <span className="opacity-50">
-              {session.status === 'stopped' ? 'Session stopped' : 'Double-click to focus'}
+              {session.status === 'stopped' ? 'Session stopped' : 'Session inactive'}
             </span>
           </div>
         )}

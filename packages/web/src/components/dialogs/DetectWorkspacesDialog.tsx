@@ -1,16 +1,11 @@
 import { useEffect, useState, useCallback } from 'react';
 import { X, Check, Loader2, FolderSearch } from 'lucide-react';
+import { formatDate } from '@claude-air/shared';
 import { api } from '@/lib/api';
 import { useSessionStore } from '@/stores/session.store';
 import type { DetectedWorkspace } from '@/types';
 
 const COLORS = ['#3b82f6', '#ef4444', '#22c55e', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316'];
-
-function formatDate(iso: string): string {
-  if (!iso) return '';
-  const d = new Date(iso);
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-}
 
 export function DetectWorkspacesDialog({ onClose }: { onClose: () => void }) {
   const [detected, setDetected] = useState<DetectedWorkspace[]>([]);

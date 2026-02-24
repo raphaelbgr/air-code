@@ -11,6 +11,7 @@ interface CanvasState {
   activeSessionId: string | null;
   initialized: boolean;
   saveStatus: SaveStatus;
+  lastSavedAt: string | null;
 
   setNodes: (nodes: Node<AppNodeData>[]) => void;
   setEdges: (edges: Edge[]) => void;
@@ -19,7 +20,7 @@ interface CanvasState {
 
   setActiveSession: (id: string | null) => void;
 
-  setSaveStatus: (s: SaveStatus) => void;
+  setSaveStatus: (s: SaveStatus, savedAt?: string) => void;
   initCanvasFromData: (workspaces: Workspace[], sessions: Session[], savedLayout?: SavedLayout | null) => void;
   mergeCanvasWithData: (workspaces: Workspace[], sessions: Session[]) => void;
 }
@@ -27,7 +28,7 @@ interface CanvasState {
 // Layout constants
 const WORKSPACE_PADDING = 40;
 const SESSION_WIDTH = 520;
-const SESSION_HEIGHT = 420;
+const SESSION_HEIGHT = 370;
 const SESSIONS_PER_ROW = 3;
 const SESSION_GAP = 20;
 const WORKSPACE_HEADER = 60;
@@ -48,6 +49,68 @@ export interface SavedLayout {
 }
 
 const norm = (p: string) => p.toLowerCase().replace(/\//g, '\\');
+
+const WORKSPACE_GAP = 60;
+
+/**
+ * Check if two rectangles overlap (with gap).
+ */
+function rectsOverlap(
+  a: { x: number; y: number; w: number; h: number },
+  b: { x: number; y: number; w: number; h: number },
+  gap: number,
+): boolean {
+  return (
+    a.x < b.x + b.w + gap &&
+    a.x + a.w + gap > b.x &&
+    a.y < b.y + b.h + gap &&
+    a.y + a.h + gap > b.y
+  );
+}
+
+/**
+ * Find a position for a new workspace bubble that doesn't overlap any existing ones.
+ * Places it to the right of the rightmost existing bubble at the same Y.
+ */
+function findNonOverlappingPosition(
+  node: Node<AppNodeData>,
+  existingBubbles: Node<AppNodeData>[],
+): { x: number; y: number } {
+  if (existingBubbles.length === 0) return node.position;
+
+  const nodeW = (node.style?.width as number) || 400;
+  const nodeH = (node.style?.height as number) || 300;
+
+  // Find the rightmost edge across all existing bubbles
+  let maxRight = 0;
+  for (const n of existingBubbles) {
+    const right = n.position.x + ((n.style?.width as number) || 400);
+    if (right > maxRight) maxRight = right;
+  }
+
+  const candidate = { x: maxRight + WORKSPACE_GAP, y: node.position.y };
+
+  // Verify no overlap (shouldn't happen since we're past the rightmost, but be safe)
+  const overlaps = existingBubbles.some((n) =>
+    rectsOverlap(
+      { x: candidate.x, y: candidate.y, w: nodeW, h: nodeH },
+      {
+        x: n.position.x,
+        y: n.position.y,
+        w: (n.style?.width as number) || 400,
+        h: (n.style?.height as number) || 300,
+      },
+      WORKSPACE_GAP,
+    ),
+  );
+
+  // If still overlapping (e.g. Y overlap), shift Y to top row
+  if (overlaps) {
+    candidate.y = 50;
+  }
+
+  return candidate;
+}
 
 /**
  * Pure function: compute fresh nodes from workspace + session data.
@@ -147,6 +210,7 @@ export const useCanvasStore = create<CanvasState>()((set, get) => ({
   activeSessionId: null,
   initialized: false,
   saveStatus: 'idle' as SaveStatus,
+  lastSavedAt: null,
 
   setNodes: (nodes) => set({ nodes }),
   setEdges: (edges) => set({ edges }),
@@ -158,7 +222,10 @@ export const useCanvasStore = create<CanvasState>()((set, get) => ({
 
   setActiveSession: (id) => set({ activeSessionId: id }),
 
-  setSaveStatus: (s) => set({ saveStatus: s }),
+  setSaveStatus: (s, savedAt) => set({
+    saveStatus: s,
+    ...(savedAt ? { lastSavedAt: savedAt } : {}),
+  }),
 
   /**
    * Called once on initial load. If savedLayout is available, merges
@@ -171,19 +238,25 @@ export const useCanvasStore = create<CanvasState>()((set, get) => ({
       // Build a lookup from saved layout
       const savedMap = new Map(savedLayout.nodes.map((n) => [n.id, n]));
 
-      const merged = freshNodes.map((node) => {
+      const merged: Node<AppNodeData>[] = [];
+      for (const node of freshNodes) {
         const saved = savedMap.get(node.id);
         if (saved) {
-          return {
+          merged.push({
             ...node,
             position: saved.position,
             style: saved.style ? { ...node.style, ...saved.style } : node.style,
             parentId: saved.parentId ?? node.parentId,
-          };
+          });
+        } else if (node.type === 'workspaceBubble') {
+          // New workspace not in saved layout — place to avoid overlap
+          const existingBubbles = merged.filter((n) => n.type === 'workspaceBubble');
+          node.position = findNonOverlappingPosition(node, existingBubbles);
+          merged.push(node);
+        } else {
+          merged.push(node);
         }
-        // New node not in saved layout — keep computed grid position
-        return node;
-      });
+      }
 
       set({
         nodes: merged,
@@ -204,7 +277,6 @@ export const useCanvasStore = create<CanvasState>()((set, get) => ({
   mergeCanvasWithData: (workspaces, sessions) => {
     const { nodes: currentNodes } = get();
     const freshNodes = buildFreshNodes(workspaces, sessions);
-    const freshMap = new Map(freshNodes.map((n) => [n.id, n]));
     const currentMap = new Map(currentNodes.map((n) => [n.id, n]));
 
     let changed = false;
@@ -217,17 +289,32 @@ export const useCanvasStore = create<CanvasState>()((set, get) => ({
         // Keep position + style (user may have resized/moved)
         // Update data payload (status, viewers, metadata)
         const dataChanged = JSON.stringify(existing.data) !== JSON.stringify(fresh.data);
-        if (dataChanged) {
+
+        // For workspace bubbles, also update style when session count changes
+        // so the bubble grows/shrinks to fit its sessions
+        const isWorkspace = fresh.type === 'workspaceBubble';
+        const sessionCountChanged = isWorkspace
+          && (existing.data as WorkspaceBubbleData).sessionCount
+             !== (fresh.data as WorkspaceBubbleData).sessionCount;
+
+        if (dataChanged || sessionCountChanged) {
           changed = true;
           merged.push({
             ...existing,
             data: fresh.data,
+            ...(sessionCountChanged ? { style: fresh.style } : {}),
           });
         } else {
           merged.push(existing);
         }
+      } else if (fresh.type === 'workspaceBubble') {
+        // New workspace bubble — place to avoid overlap with existing ones
+        changed = true;
+        const existingBubbles = merged.filter((n) => n.type === 'workspaceBubble');
+        fresh.position = findNonOverlappingPosition(fresh, existingBubbles);
+        merged.push(fresh);
       } else {
-        // New node — use computed grid position
+        // New non-workspace node — use computed grid position
         changed = true;
         merged.push(fresh);
       }

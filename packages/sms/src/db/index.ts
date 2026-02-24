@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3';
-import { mkdirSync, existsSync, unlinkSync } from 'node:fs';
+import { mkdirSync, existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import pino from 'pino';
 import { config } from '../config.js';
@@ -17,16 +17,8 @@ export function getDb(): Database.Database {
       mkdirSync(dir, { recursive: true });
     }
 
-    // Clean up stale WAL lock files from crashed processes
-    const walPath = dbPath + '-wal';
-    const shmPath = dbPath + '-shm';
-    try {
-      if (existsSync(shmPath)) unlinkSync(shmPath);
-      if (existsSync(walPath)) unlinkSync(walPath);
-    } catch {
-      // Files may be locked by another running instance - that's OK
-    }
-
+    // NEVER delete WAL/SHM files — they contain uncommitted transactions.
+    // SQLite handles WAL recovery automatically when opening the database.
     db = new Database(dbPath);
     db.pragma('journal_mode = WAL');
     db.pragma('foreign_keys = ON');
@@ -44,6 +36,8 @@ export function getDb(): Database.Database {
 
 export function closeDb(): void {
   if (db) {
+    // Checkpoint WAL to base DB before closing to ensure data persistence
+    try { db.pragma('wal_checkpoint(TRUNCATE)'); } catch { /* ignore */ }
     db.close();
     log.info('database closed');
   }

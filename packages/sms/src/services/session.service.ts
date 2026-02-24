@@ -1,4 +1,7 @@
 import { execFileSync } from 'node:child_process';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
+import { existsSync, symlinkSync, lstatSync } from 'node:fs';
 import { v4 as uuid } from 'uuid';
 import pino from 'pino';
 import type { Session, CreateSessionRequest } from '@claude-air/shared';
@@ -66,9 +69,63 @@ function fromWslPath(wslPath: string): string {
   return `${drive}:${rest}`;
 }
 
+/**
+ * Encode a Windows path to Claude Code's project folder name.
+ * F:\Raphael\Backups → F--Raphael-Backups
+ */
+function encodeWindowsFolderName(winPath: string): string {
+  const match = winPath.match(/^([A-Za-z]):\\(.*)$/);
+  if (!match) return winPath;
+  return `${match[1]}--${match[2].replace(/\\/g, '-')}`;
+}
+
+/**
+ * Encode a WSL path to Claude Code's project folder name.
+ * /mnt/f/Raphael/Backups → -mnt-f-Raphael-Backups
+ * Claude Code on Linux replaces all / with - in the cwd.
+ */
+function encodeWslFolderName(wslPath: string): string {
+  return wslPath.replace(/\//g, '-');
+}
+
+/**
+ * Ensure the WSL-encoded project folder exists as a symlink to the Windows-encoded one.
+ * Claude Code in WSL encodes /mnt/f/... differently than Windows encodes F:\...
+ * Without this, --resume can't find sessions created by Windows-native Claude Code.
+ */
+function ensureProjectSymlink(workspacePath: string): void {
+  const winFolder = encodeWindowsFolderName(workspacePath);
+  const wslFolder = encodeWslFolderName(toWslPath(workspacePath));
+  if (winFolder === wslFolder) return;
+
+  const projectsDir = join(homedir(), '.claude', 'projects');
+  const winTarget = join(projectsDir, winFolder);
+  const wslLink = join(projectsDir, wslFolder);
+
+  // Only create if the Windows folder exists and the WSL link doesn't
+  if (!existsSync(winTarget)) return;
+  try {
+    if (lstatSync(wslLink).isSymbolicLink()) return; // already linked
+    return; // exists as a real directory — don't touch
+  } catch {
+    // Doesn't exist — create the symlink
+  }
+
+  try {
+    symlinkSync(winTarget, wslLink, 'junction');
+    log.info({ winFolder, wslFolder }, 'created project symlink for WSL path');
+  } catch (err) {
+    log.warn({ err, winFolder, wslFolder }, 'failed to create project symlink');
+  }
+}
+
 function tryTmux(...args: string[]): string {
   if (IS_WINDOWS) {
-    return execFileSync('wsl', ['tmux', ...args], { stdio: 'pipe' }).toString();
+    // Use bash -c to preserve tmux format strings like #{session_name}.
+    // wsl.exe's default shell layer strips # characters, breaking -F arguments.
+    const escaped = args.map(a => a.replace(/'/g, "'\\''"));
+    const cmd = `tmux ${escaped.map(a => `'${a}'`).join(' ')}`;
+    return execFileSync('wsl', ['bash', '-c', cmd], { stdio: 'pipe' }).toString();
   }
   return execFileSync('tmux', args, { stdio: 'pipe' }).toString();
 }
@@ -114,8 +171,8 @@ export class SessionService {
 
     if (!this.mockMode) {
       // Real tmux
+      const startDir = IS_WINDOWS ? toWslPath(req.workspacePath) : req.workspacePath;
       try {
-        const startDir = IS_WINDOWS ? toWslPath(req.workspacePath) : req.workspacePath;
         tryTmux('new-session', '-d', '-s', tmuxName, '-c', startDir, '-x', '80', '-y', '24');
         // Disable tmux status bar — it wastes space especially in mini previews
         try { tryTmux('set-option', '-t', tmuxName, 'status', 'off'); } catch { /* ignore */ }
@@ -129,11 +186,21 @@ export class SessionService {
         let claudeCmd = 'claude';
         if (req.claudeResumeId) {
           claudeCmd += ` --resume ${req.claudeResumeId}`;
-        } else {
-          claudeCmd += ` --resume ${tmuxName}`;
         }
         if (req.skipPermissions) claudeCmd += ' --dangerously-skip-permissions';
         if (req.claudeArgs) claudeCmd += ` ${req.claudeArgs}`;
+
+        // On Windows, Claude CLI runs in WSL where HOME defaults to /home/<user>.
+        // Override HOME to the Windows home dir so claude --resume finds sessions
+        // at /mnt/c/Users/<user>/.claude/ instead of /home/<user>/.claude/
+        if (IS_WINDOWS) {
+          const wslHome = toWslPath(homedir());
+          claudeCmd = `HOME="${wslHome}" ${claudeCmd}`;
+
+          // Claude Code in WSL encodes project paths differently than Windows.
+          // Create a symlink so --resume can find sessions created by native Claude.
+          ensureProjectSymlink(req.workspacePath);
+        }
 
         try {
           tryTmux('send-keys', '-t', tmuxName, claudeCmd, 'Enter');
@@ -141,6 +208,12 @@ export class SessionService {
           try { tryTmux('kill-session', '-t', tmuxName); } catch { /* ignore */ }
           throw new Error(`Failed to start Claude Code: ${err}`);
         }
+      } else {
+        // Explicitly cd to workspace — tmux's -c flag sets default-path but
+        // the login shell may reset cwd to ~ before tmux processes it.
+        try {
+          tryTmux('send-keys', '-t', tmuxName, `cd "${startDir}"`, 'Enter');
+        } catch { /* non-fatal — shell still works, just in wrong dir */ }
       }
     }
 
@@ -305,14 +378,36 @@ export class SessionService {
     return this.get(id);
   }
 
+  /**
+   * On startup, just log how many sessions are available.
+   * PTY attachment is lazy — triggered by the first WebSocket client.
+   * This avoids spawning 30+ PTY processes simultaneously.
+   */
   reattachAll(): void {
     const sessions = this.list().filter((s) => s.status === 'running' || s.status === 'idle');
-    for (const session of sessions) {
-      if (!this.controllers.has(session.id)) {
-        this.attachControlMode(session.id, session.tmuxSession);
-      }
+    log.info({ count: sessions.length, mock: this.mockMode }, 'sessions available for lazy reattach');
+  }
+
+  /**
+   * Lazily attach PTY control mode to a session.
+   * Called when the first WebSocket client connects to a terminal.
+   * No-op if already attached or session is not running.
+   */
+  ensureAttached(sessionId: string): void {
+    if (this.mockMode) return;
+    if (this.controllers.has(sessionId)) return;
+
+    const session = this.get(sessionId);
+    if (!session) return;
+    if (session.status !== 'running' && session.status !== 'idle') return;
+
+    if (!this.isTmuxSessionAlive(session.tmuxSession)) {
+      this.updateStatus(sessionId, 'stopped');
+      return;
     }
-    log.info({ count: sessions.length, mock: this.mockMode }, 'reattached control mode to running sessions');
+
+    this.attachControlMode(sessionId, session.tmuxSession);
+    log.info({ id: sessionId, tmux: session.tmuxSession }, 'lazy-attached control mode');
   }
 
   /**
@@ -366,7 +461,7 @@ export class SessionService {
         db.prepare(`
           INSERT OR IGNORE INTO sessions (id, name, tmux_session, workspace_path, status, type, skip_permissions)
           VALUES (?, ?, ?, ?, 'running', 'shell', 0)
-        `).run(id, `${dirName} (recovered)`, tmuxName, workspacePath);
+        `).run(id, dirName, tmuxName, workspacePath);
 
         adopted++;
         log.info({ tmuxName, id, workspacePath }, 'adopted orphan tmux session');
@@ -383,6 +478,9 @@ export class SessionService {
         log.info({ id: row.id, tmux: row.tmux_session }, 'removed dead session from DB');
       }
     }
+
+    // 5. Strip "(recovered)" suffix from session names (legacy cleanup)
+    db.prepare(`UPDATE sessions SET name = REPLACE(name, ' (recovered)', '') WHERE name LIKE '% (recovered)'`).run();
 
     if (adopted > 0 || removed > 0) {
       log.info({ adopted, removed }, 'session reconciliation complete');

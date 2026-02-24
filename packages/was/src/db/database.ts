@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3';
-import { mkdirSync, existsSync, unlinkSync } from 'node:fs';
+import { mkdirSync, existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import pino from 'pino';
 import { config } from '../config.js';
@@ -76,6 +76,8 @@ export function getDb(): Database.Database {
 
 export function closeDb(): void {
   if (db) {
+    // Checkpoint WAL to base DB before closing to ensure data persistence
+    try { db.pragma('wal_checkpoint(TRUNCATE)'); } catch { /* ignore */ }
     db.close();
     log.info('WAS database closed');
   }
