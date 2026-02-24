@@ -100,9 +100,17 @@ export const WorkspaceBubble = memo(function WorkspaceBubble({ data }: Props) {
         </div>
       </div>
 
-      {workspace.description && (
-        <p className="text-text-muted text-xs px-4 mt-1">{workspace.description}</p>
-      )}
+      {/* Workspace path + description */}
+      <div className="px-4 mt-1 space-y-0.5">
+        {workspace.path && (
+          <p className="text-text-muted text-[10px] font-mono truncate" title={workspace.path}>
+            {workspace.path}
+          </p>
+        )}
+        {workspace.description && (
+          <p className="text-text-muted text-xs">{workspace.description}</p>
+        )}
+      </div>
 
       {showSettings && (
         <WorkspaceSettingsDialog

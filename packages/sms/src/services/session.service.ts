@@ -42,6 +42,18 @@ function rowToSession(row: SessionRow): Session {
 
 const IS_WINDOWS = process.platform === 'win32';
 
+/**
+ * Convert a Windows path to a WSL path.
+ * C:\Users\foo\bar → /mnt/c/Users/foo/bar
+ */
+function toWslPath(winPath: string): string {
+  const match = winPath.match(/^([A-Za-z]):([\\/].*)?$/);
+  if (!match) return winPath;
+  const drive = match[1].toLowerCase();
+  const rest = (match[2] || '').replace(/\\/g, '/');
+  return `/mnt/${drive}${rest}`;
+}
+
 function tryTmux(...args: string[]): string {
   if (IS_WINDOWS) {
     return execFileSync('wsl', ['tmux', ...args], { stdio: 'pipe' }).toString();
@@ -91,7 +103,8 @@ export class SessionService {
     if (!this.mockMode) {
       // Real tmux
       try {
-        tryTmux('new-session', '-d', '-s', tmuxName, '-c', req.workspacePath, '-x', '80', '-y', '24');
+        const startDir = IS_WINDOWS ? toWslPath(req.workspacePath) : req.workspacePath;
+        tryTmux('new-session', '-d', '-s', tmuxName, '-c', startDir, '-x', '80', '-y', '24');
         // Disable tmux status bar — it wastes space especially in mini previews
         try { tryTmux('set-option', '-t', tmuxName, 'status', 'off'); } catch { /* ignore */ }
       } catch (err) {
