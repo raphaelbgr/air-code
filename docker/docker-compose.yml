@@ -1,0 +1,45 @@
+services:
+  sms:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.sms
+    ports:
+      - "7331:7331"
+    volumes:
+      - sms-data:/app/data
+    environment:
+      - SMS_PORT=7331
+      - SMS_HOST=0.0.0.0
+      - SMS_DB_PATH=/app/data/sessions.db
+      - SMS_MAX_SCROLLBACK=10000
+      - NODE_ENV=production
+      - LOG_LEVEL=info
+    restart: unless-stopped
+
+  was:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.was
+    ports:
+      - "7333:7333"
+    volumes:
+      - was-data:/app/data
+    environment:
+      - WAS_PORT=7333
+      - WAS_HOST=0.0.0.0
+      - WAS_SMS_URL=http://sms:7331
+      - WAS_DB_PATH=/app/data/was.db
+      - WAS_JWT_SECRET=${WAS_JWT_SECRET:-change-me-in-production}
+      - WAS_JWT_EXPIRY=7d
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - AI_AGENT_MODEL=${AI_AGENT_MODEL:-claude-sonnet-4-20250514}
+      - NODE_ENV=production
+      - LOG_LEVEL=info
+    depends_on:
+      sms:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  sms-data:
+  was-data:

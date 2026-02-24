@@ -1,0 +1,22 @@
+{
+  "name": "claude-code-air",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently -n sms,was -c blue,green \"pnpm --filter @claude-air/sms dev\" \"pnpm --filter @claude-air/was dev\"",
+    "dev:sms": "pnpm --filter @claude-air/sms dev",
+    "dev:was": "pnpm --filter @claude-air/was dev",
+    "dev:web": "pnpm --filter @claude-air/web dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0",
+    "typescript": "^5.7.0"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["better-sqlite3", "esbuild", "node-pty"]
+  }
+}
