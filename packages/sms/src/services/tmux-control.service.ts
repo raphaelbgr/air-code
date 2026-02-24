@@ -42,7 +42,7 @@ export class TmuxControlMode extends EventEmitter {
   /**
    * Attach to an existing tmux session via a real PTY.
    */
-  attach(sessionName: string, cols = 200, rows = 50): void {
+  attach(sessionName: string, cols = 80, rows = 24): void {
     if (this.ptyProcess) {
       throw new Error('Already attached. Call detach() first.');
     }
@@ -74,7 +74,14 @@ export class TmuxControlMode extends EventEmitter {
     });
 
     this.ptyProcess.onExit(({ exitCode }) => {
-      log.info({ exitCode, sessionName }, 'PTY exited');
+      // exitCode -1073741510 (0xC000013A) = STATUS_CONTROL_C_EXIT on Windows
+      // This is normal when killing a session — the ConPTY agent fails to
+      // attach to the already-dead console process. Suppress the error.
+      if (exitCode === -1073741510) {
+        log.debug({ exitCode, sessionName }, 'PTY exited (control-C / session killed)');
+      } else {
+        log.info({ exitCode, sessionName }, 'PTY exited');
+      }
       this._attached = false;
       this.ptyProcess = null;
       this.emit('detached');
