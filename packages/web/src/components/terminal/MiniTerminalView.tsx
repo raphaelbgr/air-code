@@ -3,7 +3,7 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
 import { useAuthStore } from '@/stores/auth.store';
-import { createTerminalWs, sendTerminalInput } from '@/lib/ws';
+import { createTerminalWs, sendTerminalInput, sendTerminalResize } from '@/lib/ws';
 import type { WsMessage } from '@claude-air/shared';
 
 interface MiniTerminalViewProps {
@@ -13,8 +13,9 @@ interface MiniTerminalViewProps {
 
 /**
  * Tiny embedded xterm.js terminal for session node previews.
- * Interactive (sends input) but does NOT send resize events,
- * so the tmux pane stays at the full panel's dimensions.
+ * Interactive (sends input and resize) so the tmux pane matches
+ * the mini viewport. When the full panel opens, its larger resize
+ * takes over.
  */
 export function MiniTerminalView({ sessionId, active }: MiniTerminalViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -44,7 +45,14 @@ export function MiniTerminalView({ sessionId, active }: MiniTerminalViewProps) {
     term.open(container);
     requestAnimationFrame(() => fitAddon.fit());
 
-    const ws = createTerminalWs(sessionId, token);
+    const ws = createTerminalWs(sessionId, token, { preview: true });
+
+    ws.onopen = () => {
+      // Send initial resize so tmux adjusts to mini viewport dimensions
+      requestAnimationFrame(() => {
+        sendTerminalResize(ws, sessionId, term.cols, term.rows);
+      });
+    };
 
     ws.onmessage = (event) => {
       try {
@@ -62,9 +70,12 @@ export function MiniTerminalView({ sessionId, active }: MiniTerminalViewProps) {
       sendTerminalInput(ws, sessionId, data);
     });
 
-    // Fit locally on resize — but do NOT send resize to server
+    // Fit locally and send resize to server
     const resizeObserver = new ResizeObserver(() => {
       fitAddon.fit();
+      if (ws.readyState === WebSocket.OPEN) {
+        sendTerminalResize(ws, sessionId, term.cols, term.rows);
+      }
     });
     resizeObserver.observe(container);
 

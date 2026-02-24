@@ -68,26 +68,30 @@ export class SessionMultiplexer {
 
   /**
    * Add a WebSocket client to this multiplexer.
-   * Sends scrollback buffer as initial data.
+   * Sends scrollback buffer as initial data unless skipScrollback is set
+   * (used by mini preview terminals that resize immediately — old scrollback
+   * contains escape codes for a different terminal size and causes blank rows).
    */
-  addClient(clientId: string, ws: WebSocket): void {
+  addClient(clientId: string, ws: WebSocket, skipScrollback = false): void {
     const isLeader = this.clients.size === 0;
     this.clients.set(clientId, { ws, clientId, isLeader });
 
-    // Send scrollback to new client
-    const history = this.scrollback.getAll();
-    if (history.length > 0) {
-      const payload = JSON.stringify({
-        type: 'terminal:data',
-        sessionId: this.sessionId,
-        data: history.join(''),
-      });
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(payload);
+    // Send scrollback to new client (unless preview mode)
+    if (!skipScrollback) {
+      const history = this.scrollback.getAll();
+      if (history.length > 0) {
+        const payload = JSON.stringify({
+          type: 'terminal:data',
+          sessionId: this.sessionId,
+          data: history.join(''),
+        });
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(payload);
+        }
       }
     }
 
-    log.info({ sessionId: this.sessionId, clientId, isLeader }, 'client added to multiplexer');
+    log.info({ sessionId: this.sessionId, clientId, isLeader, skipScrollback }, 'client added to multiplexer');
   }
 
   /**

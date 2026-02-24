@@ -4,9 +4,15 @@ import type { WsMessage } from '@claude-air/shared';
  * Create a WebSocket connection for terminal I/O.
  * Returns the WebSocket instance for direct event handling.
  */
-export function createTerminalWs(sessionId: string, token: string): WebSocket {
+export interface TerminalWsOptions {
+  /** If true, server skips scrollback replay (for mini previews that resize immediately) */
+  preview?: boolean;
+}
+
+export function createTerminalWs(sessionId: string, token: string, opts?: TerminalWsOptions): WebSocket {
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const url = `${protocol}//${location.host}/ws/terminal?sessionId=${encodeURIComponent(sessionId)}&token=${encodeURIComponent(token)}`;
+  let url = `${protocol}//${location.host}/ws/terminal?sessionId=${encodeURIComponent(sessionId)}&token=${encodeURIComponent(token)}`;
+  if (opts?.preview) url += '&preview=true';
   return new WebSocket(url);
 }
 

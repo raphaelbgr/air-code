@@ -91,7 +91,7 @@ export class SessionService {
     if (!this.mockMode) {
       // Real tmux
       try {
-        tryTmux('new-session', '-d', '-s', tmuxName, '-c', req.workspacePath, '-x', '200', '-y', '50');
+        tryTmux('new-session', '-d', '-s', tmuxName, '-c', req.workspacePath, '-x', '80', '-y', '24');
         // Disable tmux status bar — it wastes space especially in mini previews
         try { tryTmux('set-option', '-t', tmuxName, 'status', 'off'); } catch { /* ignore */ }
       } catch (err) {

@@ -31,9 +31,10 @@ export function setupTerminalWebSocket(
       return;
     }
 
+    const isPreview = url.searchParams.get('preview') === 'true';
     const clientId = uuid();
     const mux = multiplexers.getOrCreate(sessionId);
-    mux.addClient(clientId, ws);
+    mux.addClient(clientId, ws, isPreview);
 
     log.info({ sessionId, clientId }, 'terminal client connected');
 
@@ -51,7 +52,9 @@ export function setupTerminalWebSocket(
           case 'terminal:resize':
             if (msg.cols && msg.rows) {
               const ctrl = sessionService.getController(sessionId);
-              if (ctrl?.attached && mux.getLeader()?.clientId === clientId) {
+              if (ctrl?.attached) {
+                // Any client can resize — the last resize wins.
+                // The full panel's resize will override the mini terminal's.
                 await ctrl.resizePane(session.tmuxSession, msg.cols, msg.rows);
               }
             }
