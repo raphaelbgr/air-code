@@ -54,6 +54,18 @@ function toWslPath(winPath: string): string {
   return `/mnt/${drive}${rest}`;
 }
 
+/**
+ * Convert a WSL path back to a Windows path.
+ * /mnt/c/Users/foo/bar → C:\Users\foo\bar
+ */
+function fromWslPath(wslPath: string): string {
+  const match = wslPath.match(/^\/mnt\/([a-z])(\/.*)?$/);
+  if (!match) return wslPath;
+  const drive = match[1].toUpperCase();
+  const rest = (match[2] || '').replace(/\//g, '\\');
+  return `${drive}:${rest}`;
+}
+
 function tryTmux(...args: string[]): string {
   if (IS_WINDOWS) {
     return execFileSync('wsl', ['tmux', ...args], { stdio: 'pipe' }).toString();
@@ -339,7 +351,12 @@ export class SessionService {
           workspacePath = tryTmux(
             'display-message', '-t', tmuxName, '-p', '#{pane_current_path}',
           ).trim();
+          // WSL returns /mnt/c/... paths — convert back to Windows C:\...
+          if (IS_WINDOWS) workspacePath = fromWslPath(workspacePath);
         } catch { /* fallback to empty */ }
+
+        // Ensure tmux status bar is off for recovered sessions
+        try { tryTmux('set-option', '-t', tmuxName, 'status', 'off'); } catch { /* ignore */ }
 
         // Derive a session id from the tmux name (cca-<8chars> → use as uuid prefix)
         const shortId = tmuxName.replace(TMUX_SESSION_PREFIX, '');

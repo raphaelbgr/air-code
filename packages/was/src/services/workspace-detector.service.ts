@@ -178,7 +178,8 @@ const STATS_CACHE_TTL = 30_000; // 30 seconds
 
 /**
  * Build a map of workspace path to Claude Code session stats.
- * Scans all sessions-index.json files under ~/.claude/projects/ and returns counts + last active dates.
+ * Scans .jsonl files directly (sessions-index.json is deprecated and often stale).
+ * Only counts sessions with actual messages (messageCount > 0).
  * Results are cached for 30 seconds to avoid excessive filesystem reads.
  */
 export async function getClaudeStatsMap(): Promise<Map<string, { sessionCount: number; lastActive: string }>> {
@@ -186,12 +187,35 @@ export async function getClaudeStatsMap(): Promise<Map<string, { sessionCount: n
     return _statsCache;
   }
 
-  const entries = await scanClaudeProjectEntries();
+  const projectsDir = join(homedir(), '.claude', 'projects');
   const result = new Map<string, { sessionCount: number; lastActive: string }>();
 
-  for (const e of entries) {
-    if (e.sessionCount > 0) {
-      result.set(normalizePath(e.projectPath), { sessionCount: e.sessionCount, lastActive: e.lastActive });
+  let folders: string[];
+  try {
+    folders = await readdir(projectsDir);
+  } catch {
+    _statsCache = result;
+    _statsCacheTime = Date.now();
+    return result;
+  }
+
+  for (const folder of folders) {
+    if (folder.startsWith('-') || folder.startsWith('.')) continue;
+
+    const folderPath = join(projectsDir, folder);
+    try {
+      const s = await stat(folderPath);
+      if (!s.isDirectory()) continue;
+    } catch {
+      continue;
+    }
+
+    const projectPath = decodeFolderName(folder);
+    const sessions = await scanJsonlSessions(folderPath, projectPath);
+
+    if (sessions.length > 0) {
+      const lastActive = sessions[0].modified; // already sorted newest-first
+      result.set(normalizePath(projectPath), { sessionCount: sessions.length, lastActive });
     }
   }
 

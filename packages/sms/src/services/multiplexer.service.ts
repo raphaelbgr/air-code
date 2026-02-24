@@ -45,6 +45,7 @@ export interface MultiplexerClient {
   ws: WebSocket;
   clientId: string;
   isLeader: boolean; // first connected client determines resize
+  isPreview: boolean; // mini terminal previews (shouldn't control size when full panels exist)
 }
 
 /**
@@ -74,7 +75,7 @@ export class SessionMultiplexer {
    */
   addClient(clientId: string, ws: WebSocket, skipScrollback = false): void {
     const isLeader = this.clients.size === 0;
-    this.clients.set(clientId, { ws, clientId, isLeader });
+    this.clients.set(clientId, { ws, clientId, isLeader, isPreview: skipScrollback });
 
     // Send scrollback to new client (unless preview mode)
     if (!skipScrollback) {
@@ -149,6 +150,24 @@ export class SessionMultiplexer {
    */
   hasClient(clientId: string): boolean {
     return this.clients.has(clientId);
+  }
+
+  /**
+   * Whether a non-preview (full panel) client is connected.
+   * Preview terminals yield resize control to full panels.
+   */
+  hasFullPanelClient(): boolean {
+    for (const client of this.clients.values()) {
+      if (!client.isPreview) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Check if a specific client is a preview client.
+   */
+  isPreviewClient(clientId: string): boolean {
+    return this.clients.get(clientId)?.isPreview ?? false;
   }
 
   /**

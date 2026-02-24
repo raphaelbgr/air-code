@@ -15,7 +15,11 @@ interface MiniTerminalViewProps {
  * Tiny embedded xterm.js terminal for session node previews.
  * Interactive (sends input and resize) so the tmux pane matches
  * the mini viewport. When the full panel opens, its larger resize
- * takes over.
+ * takes over — the server ignores preview resize when a full panel
+ * is connected.
+ *
+ * Rendering is gated on a server-acknowledged resize (`terminal:resized`).
+ * This eliminates race conditions — no timers, no guessing.
  */
 export function MiniTerminalView({ sessionId, active }: MiniTerminalViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -47,9 +51,14 @@ export function MiniTerminalView({ sessionId, active }: MiniTerminalViewProps) {
 
     const ws = createTerminalWs(sessionId, token, { preview: true });
 
+    // Gate rendering on server-acknowledged resize.
+    // Before the ack, all data is at the PTY's old size and would cause
+    // blank rows / wrapped lines in this smaller viewport.
+    let resizeAcked = false;
+
     ws.onopen = () => {
-      // Send initial resize so tmux adjusts to mini viewport dimensions
       requestAnimationFrame(() => {
+        fitAddon.fit();
         sendTerminalResize(ws, sessionId, term.cols, term.rows);
       });
     };
@@ -57,11 +66,22 @@ export function MiniTerminalView({ sessionId, active }: MiniTerminalViewProps) {
     ws.onmessage = (event) => {
       try {
         const msg: WsMessage = JSON.parse(event.data);
+
+        if (msg.type === 'terminal:resized') {
+          // Server confirmed the resize — safe to render.
+          // Reset the terminal to clear any stale pre-resize content
+          // that might have been queued in the PTY buffer.
+          term.reset();
+          resizeAcked = true;
+          return;
+        }
+
         if (msg.type === 'terminal:data' && msg.data) {
+          if (!resizeAcked) return; // discard pre-ack data (wrong terminal size)
           term.write(msg.data);
         }
       } catch {
-        term.write(event.data);
+        if (resizeAcked) term.write(event.data);
       }
     };
 
@@ -70,7 +90,7 @@ export function MiniTerminalView({ sessionId, active }: MiniTerminalViewProps) {
       sendTerminalInput(ws, sessionId, data);
     });
 
-    // Fit locally and send resize to server
+    // Fit locally and send resize to server on container resize
     const resizeObserver = new ResizeObserver(() => {
       fitAddon.fit();
       if (ws.readyState === WebSocket.OPEN) {

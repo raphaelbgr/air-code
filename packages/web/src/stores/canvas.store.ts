@@ -122,6 +122,7 @@ export const useCanvasStore = create<CanvasState>()((set, get) => ({
             type: 'session',
             session,
             workspaceId: workspace.id,
+            workspaceSettings: workspace.settings,
             viewers: [],
           },
           style: { width: SESSION_WIDTH, height: SESSION_HEIGHT },

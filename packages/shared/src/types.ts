@@ -126,6 +126,7 @@ export interface PresenceUser {
 export type WsMessageType =
   | 'terminal:data'
   | 'terminal:resize'
+  | 'terminal:resized'
   | 'terminal:input';
 
 export interface WsMessage {

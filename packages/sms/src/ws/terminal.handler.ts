@@ -51,12 +51,36 @@ export function setupTerminalWebSocket(
 
           case 'terminal:resize':
             if (msg.cols && msg.rows) {
+              const isPreview = mux.isPreviewClient(clientId);
+              const hasFullPanel = mux.hasFullPanelClient();
+
+              // Preview clients yield resize control when a full panel is connected.
+              // This prevents the mini terminal from shrinking tmux when the user
+              // has the full panel open — the full panel's size always wins.
+              if (isPreview && hasFullPanel) {
+                // Still ack so the client can start rendering (at the full panel's size)
+                ws.send(JSON.stringify({
+                  type: 'terminal:resized',
+                  sessionId,
+                  cols: msg.cols,
+                  rows: msg.rows,
+                }));
+                break;
+              }
+
               const ctrl = sessionService.getController(sessionId);
               if (ctrl?.attached) {
-                // Any client can resize — the last resize wins.
-                // The full panel's resize will override the mini terminal's.
                 await ctrl.resizePane(session.tmuxSession, msg.cols, msg.rows);
               }
+
+              // Ack the resize so the client knows it's safe to start rendering.
+              // Data after this point is at the new terminal size.
+              ws.send(JSON.stringify({
+                type: 'terminal:resized',
+                sessionId,
+                cols: msg.cols,
+                rows: msg.rows,
+              }));
             }
             break;
 

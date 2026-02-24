@@ -26,6 +26,7 @@ export type SessionNodeData = {
   type: 'session';
   session: import('@claude-air/shared').Session;
   workspaceId: string;
+  workspaceSettings?: import('@claude-air/shared').WorkspaceSettings;
   viewers: import('@claude-air/shared').PresenceUser[];
   [key: string]: unknown;
 };

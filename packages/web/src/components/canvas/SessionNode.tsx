@@ -1,6 +1,6 @@
 import { memo, useCallback, useState } from 'react';
 import { type NodeProps } from '@xyflow/react';
-import { Terminal, Sparkles, Circle, Trash2, Maximize2, Monitor, Copy, Check, X } from 'lucide-react';
+import { Terminal, Sparkles, Circle, Trash2, Maximize2, Monitor, Copy, Check, X, GitFork } from 'lucide-react';
 import type { SessionNodeData } from '@/types';
 import { useCanvasStore } from '@/stores/canvas.store';
 import { useSessionStore } from '@/stores/session.store';
@@ -18,12 +18,14 @@ const statusColors: Record<string, string> = {
 };
 
 export const SessionNode = memo(function SessionNode({ data }: Props) {
-  const { session, viewers } = data;
+  const { session, workspaceSettings, viewers } = data;
   const openPanel = useCanvasStore((s) => s.openPanel);
   const closePanelTab = useCanvasStore((s) => s.closePanelTab);
+  const addSession = useSessionStore((s) => s.addSession);
   const removeSession = useSessionStore((s) => s.removeSession);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [forking, setForking] = useState(false);
   const [showJoin, setShowJoin] = useState(false);
   const [copied, setCopied] = useState<'win' | 'unix' | null>(null);
 
@@ -55,6 +57,27 @@ export const SessionNode = memo(function SessionNode({ data }: Props) {
     setTimeout(() => setCopied(null), 2000);
   }, [session.tmuxSession]);
 
+  const handleFork = useCallback(async () => {
+    if (forking || !session.claudeSessionId) return;
+    setForking(true);
+    try {
+      const forked = await api.sessions.create({
+        name: `${session.name} (fork)`,
+        workspacePath: session.workspacePath,
+        type: 'claude',
+        skipPermissions: workspaceSettings?.skipPermissions,
+        claudeArgs: workspaceSettings?.claudeArgs,
+        claudeResumeId: session.claudeSessionId,
+      });
+      addSession(forked);
+      openPanel(forked.id);
+    } catch (err) {
+      console.error('Fork session failed:', err);
+    } finally {
+      setForking(false);
+    }
+  }, [session, forking, workspaceSettings, addSession, openPanel]);
+
   const Icon = session.type === 'shell' ? Terminal : Sparkles;
   const isActive = session.status === 'running' || session.status === 'idle';
 
@@ -76,6 +99,16 @@ export const SessionNode = memo(function SessionNode({ data }: Props) {
           >
             <Monitor size={12} />
           </button>
+          {session.type === 'claude' && session.claudeSessionId && (
+            <button
+              onClick={handleFork}
+              disabled={forking}
+              className="p-1 rounded text-text-muted hover:text-text-primary transition-colors disabled:opacity-50"
+              title="Fork conversation"
+            >
+              <GitFork size={12} />
+            </button>
+          )}
           <button
             onClick={handleExpand}
             className="p-1 rounded text-text-muted hover:text-text-primary transition-colors"
