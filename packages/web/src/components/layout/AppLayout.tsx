@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { ReactFlowProvider } from '@xyflow/react';
 import { CanvasView } from '../canvas/CanvasView';
 import { SearchDialog } from '../canvas/SearchDialog';
-import { TerminalPanel } from '../terminal/TerminalPanel';
 import { AgentPanel } from '../agent/AgentPanel';
 import { MobileListView } from '../mobile/MobileListView';
 import { MobileTerminal } from '../mobile/MobileTerminal';
@@ -17,6 +16,7 @@ import { useAgentStore } from '@/stores/agent.store';
 import { useCanvasStore } from '@/stores/canvas.store';
 import { useSessionStore } from '@/stores/session.store';
 import { LogOut, User } from 'lucide-react';
+import { SaveStatusIcon } from '../canvas/SaveStatusIcon';
 
 export function AppLayout() {
   usePresence();
@@ -93,19 +93,15 @@ export function AppLayout() {
       <TopBar user={user} onLogout={logout} />
 
       <div className="flex-1 flex overflow-hidden">
-        <div className="flex-1 flex flex-col overflow-hidden">
-          <div className="flex-1 overflow-hidden">
-            <ReactFlowProvider>
-              <CanvasView />
-            </ReactFlowProvider>
-          </div>
-          <TerminalPanel />
+        <div className="flex-1 overflow-hidden">
+          <ReactFlowProvider>
+            <CanvasView />
+            <SearchDialog open={showSearch} onClose={() => setShowSearch(false)} />
+          </ReactFlowProvider>
         </div>
 
         {agentPanelOpen && <AgentPanel />}
       </div>
-
-      <SearchDialog open={showSearch} onClose={() => setShowSearch(false)} />
     </div>
   );
 }
@@ -117,6 +113,7 @@ function TopBar({ user, onLogout }: { user: { displayName: string } | null; onLo
         <span className="text-accent font-bold text-sm">Claude Code Air</span>
       </div>
       <div className="flex items-center gap-3">
+        <SaveStatusIcon />
         {user && (
           <div className="flex items-center gap-2 text-sm text-text-secondary">
             <User size={14} />

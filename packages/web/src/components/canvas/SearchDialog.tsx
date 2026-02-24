@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { Search, Terminal, Folder, X } from 'lucide-react';
+import { Search, Terminal, Folder } from 'lucide-react';
+import { useReactFlow } from '@xyflow/react';
 import { useSessionStore } from '@/stores/session.store';
-import { useCanvasStore } from '@/stores/canvas.store';
 
 interface SearchDialogProps {
   open: boolean;
@@ -13,7 +13,7 @@ export function SearchDialog({ open, onClose }: SearchDialogProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const sessions = useSessionStore((s) => s.sessions);
   const workspaces = useSessionStore((s) => s.workspaces);
-  const openPanel = useCanvasStore((s) => s.openPanel);
+  const reactFlow = useReactFlow();
 
   useEffect(() => {
     if (open) {
@@ -36,6 +36,18 @@ export function SearchDialog({ open, onClose }: SearchDialogProps) {
   }, [query, sessions, workspaces]);
 
   if (!open) return null;
+
+  const handleSessionClick = (sessionId: string) => {
+    const nodeId = `session-${sessionId}`;
+    reactFlow.fitView({ nodes: [{ id: nodeId }], duration: 300, padding: 0.5 });
+    onClose();
+  };
+
+  const handleWorkspaceClick = (workspaceId: string) => {
+    const nodeId = `ws-${workspaceId}`;
+    reactFlow.fitView({ nodes: [{ id: nodeId }], duration: 300, padding: 0.3 });
+    onClose();
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center pt-[15vh] bg-black/50" onClick={onClose}>
@@ -63,7 +75,7 @@ export function SearchDialog({ open, onClose }: SearchDialogProps) {
                 <button
                   key={w.id}
                   className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-bg-tertiary text-left transition"
-                  onClick={() => { onClose(); }}
+                  onClick={() => handleWorkspaceClick(w.id)}
                 >
                   <Folder size={14} style={{ color: w.color }} />
                   <div>
@@ -82,7 +94,7 @@ export function SearchDialog({ open, onClose }: SearchDialogProps) {
                 <button
                   key={s.id}
                   className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-bg-tertiary text-left transition"
-                  onClick={() => { openPanel(s.id); onClose(); }}
+                  onClick={() => handleSessionClick(s.id)}
                 >
                   <Terminal size={14} className="text-text-muted" />
                   <div>

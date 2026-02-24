@@ -1,10 +1,9 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ReactFlow,
   Background,
   Controls,
   MiniMap,
-  useReactFlow,
   type NodeTypes,
   type OnNodesChange,
   applyNodeChanges,
@@ -12,9 +11,10 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 
-import { useCanvasStore } from '@/stores/canvas.store';
+import { useCanvasStore, type SavedLayout } from '@/stores/canvas.store';
 import { useSessionStore } from '@/stores/session.store';
 import { usePresenceStore } from '@/stores/presence.store';
+import { api } from '@/lib/api';
 import { WorkspaceBubble } from './WorkspaceBubble';
 import { SessionNode } from './SessionNode';
 import { CanvasToolbar } from './CanvasToolbar';
@@ -29,25 +29,47 @@ const nodeTypes: NodeTypes = {
 };
 
 export function CanvasView() {
-  const { nodes, edges, setNodes, setViewport, buildCanvasFromData } = useCanvasStore();
+  const { nodes, edges, setNodes, setViewport, initCanvasFromData, mergeCanvasWithData, initialized } = useCanvasStore();
   const { sessions, workspaces, fetchAll } = useSessionStore();
   const presenceUsers = usePresenceStore((s) => s.users);
   const [showCreateWorkspace, setShowCreateWorkspace] = useState(false);
   const [showDetectWorkspaces, setShowDetectWorkspaces] = useState(false);
   const [showCreateSession, setShowCreateSession] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
+  const initDone = useRef(false);
 
-  // Fetch data on mount
+  // Fetch data on mount + poll
   useEffect(() => {
     fetchAll();
     const interval = setInterval(fetchAll, 5000);
     return () => clearInterval(interval);
   }, [fetchAll]);
 
-  // Build canvas when data changes
+  // Initial load: fetch saved canvas state, then init
   useEffect(() => {
-    buildCanvasFromData(workspaces, sessions);
-  }, [workspaces, sessions, buildCanvasFromData]);
+    if (initDone.current || (workspaces.length === 0 && sessions.length === 0)) return;
+    initDone.current = true;
+
+    (async () => {
+      let savedLayout: SavedLayout | null = null;
+      try {
+        const raw = await api.canvas.get();
+        // Cast from CanvasState (unknown[] nodes) to SavedLayout
+        if (raw?.nodes) {
+          savedLayout = raw as unknown as SavedLayout;
+        }
+      } catch {
+        // No saved state — will use computed grid
+      }
+      initCanvasFromData(workspaces, sessions, savedLayout);
+    })();
+  }, [workspaces, sessions, initCanvasFromData]);
+
+  // On subsequent polls: merge data (preserves positions)
+  useEffect(() => {
+    if (!initialized) return;
+    mergeCanvasWithData(workspaces, sessions);
+  }, [workspaces, sessions, initialized, mergeCanvasWithData]);
 
   // Inject presence viewers into session nodes
   useEffect(() => {
@@ -100,7 +122,7 @@ export function CanvasView() {
         nodeTypes={nodeTypes}
         onNodesChange={onNodesChange}
         onMoveEnd={(_, viewport) => setViewport(viewport)}
-        fitView
+        fitView={!initialized}
         minZoom={0.1}
         maxZoom={2}
         proOptions={{ hideAttribution: true }}

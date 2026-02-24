@@ -17,5 +17,6 @@
     }
   },
   "include": ["src"],
+  "exclude": ["src/_archive"],
   "references": [{ "path": "../shared" }]
 }

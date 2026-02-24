@@ -1,8 +1,11 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
+import { WebLinksAddon } from '@xterm/addon-web-links';
+import { SearchAddon } from '@xterm/addon-search';
 import '@xterm/xterm/css/xterm.css';
 import { useAuthStore } from '@/stores/auth.store';
+import { useTerminalStore } from '@/stores/terminal.store';
 import { createTerminalWs, sendTerminalInput, sendTerminalResize } from '@/lib/ws';
 import type { WsMessage } from '@claude-air/shared';
 
@@ -12,87 +15,79 @@ interface MiniTerminalViewProps {
 }
 
 /**
- * Tiny embedded xterm.js terminal for session node previews.
- * Interactive (sends input and resize) so the tmux pane matches
- * the mini viewport. When the full panel opens, its larger resize
- * takes over — the server ignores preview resize when a full panel
- * is connected.
- *
- * Rendering is gated on a server-acknowledged resize (`terminal:resized`).
- * This eliminates race conditions — no timers, no guessing.
+ * Primary embedded xterm.js terminal rendered inside each session node.
+ * Full-featured: native font size, resize events sent to the server,
+ * clickable URLs, search, cursor blink, and 5000-line scrollback.
  */
 export function MiniTerminalView({ sessionId, active }: MiniTerminalViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const token = useAuthStore((s) => s.token);
+  const setTerminalMeta = useTerminalStore((s) => s.setTerminalMeta);
 
   useEffect(() => {
     const container = containerRef.current;
     if (!container || !token || !active) return;
 
     const term = new Terminal({
-      fontSize: 9,
-      lineHeight: 1.1,
-      fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+      fontSize: 13,
+      fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
       theme: {
         background: '#0a0a0f',
         foreground: '#e4e4e7',
         cursor: '#818cf8',
         selectionBackground: '#818cf840',
       },
-      cursorBlink: false,
-      scrollback: 200,
-      convertEol: true,
+      cursorBlink: true,
+      scrollback: 5000,
     });
 
     const fitAddon = new FitAddon();
+    const webLinksAddon = new WebLinksAddon();
+    const searchAddon = new SearchAddon();
+
     term.loadAddon(fitAddon);
+    term.loadAddon(webLinksAddon);
+    term.loadAddon(searchAddon);
     term.open(container);
     requestAnimationFrame(() => fitAddon.fit());
 
-    const ws = createTerminalWs(sessionId, token, { preview: true });
-
-    // Gate rendering on server-acknowledged resize.
-    // Before the ack, all data is at the PTY's old size and would cause
-    // blank rows / wrapped lines in this smaller viewport.
-    let resizeAcked = false;
+    // WebSocket connection
+    const ws = createTerminalWs(sessionId, token);
 
     ws.onopen = () => {
+      setTerminalMeta(sessionId, { connected: true });
+      // Send initial size after fit
       requestAnimationFrame(() => {
         fitAddon.fit();
         sendTerminalResize(ws, sessionId, term.cols, term.rows);
+        setTerminalMeta(sessionId, { cols: term.cols, rows: term.rows });
       });
     };
 
     ws.onmessage = (event) => {
       try {
         const msg: WsMessage = JSON.parse(event.data);
-
-        if (msg.type === 'terminal:resized') {
-          // Server confirmed the resize — safe to render.
-          // Reset the terminal to clear any stale pre-resize content
-          // that might have been queued in the PTY buffer.
-          term.reset();
-          resizeAcked = true;
-          return;
-        }
-
         if (msg.type === 'terminal:data' && msg.data) {
-          if (!resizeAcked) return; // discard pre-ack data (wrong terminal size)
           term.write(msg.data);
         }
       } catch {
-        if (resizeAcked) term.write(event.data);
+        term.write(event.data);
       }
     };
 
-    // Interactive: input goes to session
+    ws.onclose = () => {
+      setTerminalMeta(sessionId, { connected: false });
+    };
+
+    // Input from terminal -> WebSocket
     term.onData((data) => {
       sendTerminalInput(ws, sessionId, data);
     });
 
-    // Fit locally and send resize to server on container resize
+    // Resize: fit locally + send to server
     const resizeObserver = new ResizeObserver(() => {
       fitAddon.fit();
+      setTerminalMeta(sessionId, { cols: term.cols, rows: term.rows });
       if (ws.readyState === WebSocket.OPEN) {
         sendTerminalResize(ws, sessionId, term.cols, term.rows);
       }
@@ -104,7 +99,7 @@ export function MiniTerminalView({ sessionId, active }: MiniTerminalViewProps) {
       ws.close();
       term.dispose();
     };
-  }, [sessionId, token, active]);
+  }, [sessionId, token, active, setTerminalMeta]);
 
   // Stop wheel events from propagating to ReactFlow (canvas zoom)
   const handleWheel = useCallback((e: React.WheelEvent) => {

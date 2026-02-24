@@ -1,11 +1,10 @@
 import { memo, useCallback, useState } from 'react';
-import { type NodeProps } from '@xyflow/react';
+import { type NodeProps, NodeResizer } from '@xyflow/react';
 import { Folder, MessageSquare, TerminalSquare, Sparkles, Settings } from 'lucide-react';
 import type { Workspace, Session } from '@claude-air/shared';
 import type { WorkspaceBubbleData } from '@/types';
 import { api } from '@/lib/api';
 import { useSessionStore } from '@/stores/session.store';
-import { useCanvasStore } from '@/stores/canvas.store';
 import { WorkspaceSettingsDialog } from '@/components/dialogs/WorkspaceSettingsDialog';
 import { ClaudeLauncherDialog } from '@/components/dialogs/ClaudeLauncherDialog';
 
@@ -15,7 +14,6 @@ export const WorkspaceBubble = memo(function WorkspaceBubble({ data }: Props) {
   const { workspace: initialWorkspace, sessionCount, claudeSessionCount } = data;
   const [workspace, setWorkspace] = useState<Workspace>(initialWorkspace);
   const addSession = useSessionStore((s) => s.addSession);
-  const openPanel = useCanvasStore((s) => s.openPanel);
   const [creatingShell, setCreatingShell] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showLauncher, setShowLauncher] = useState(false);
@@ -30,18 +28,16 @@ export const WorkspaceBubble = memo(function WorkspaceBubble({ data }: Props) {
         type: 'shell',
       });
       addSession(session);
-      openPanel(session.id);
     } catch (err) {
       console.error('Failed to create shell session:', err);
     } finally {
       setCreatingShell(false);
     }
-  }, [workspace, creatingShell, addSession, openPanel]);
+  }, [workspace, creatingShell, addSession]);
 
   const handleClaudeCreated = useCallback((session: Session) => {
     addSession(session);
-    openPanel(session.id);
-  }, [addSession, openPanel]);
+  }, [addSession]);
 
   return (
     <div
@@ -51,6 +47,12 @@ export const WorkspaceBubble = memo(function WorkspaceBubble({ data }: Props) {
         backgroundColor: workspace.color + '08',
       }}
     >
+      <NodeResizer
+        minWidth={400}
+        minHeight={300}
+        color={workspace.color}
+        handleStyle={{ backgroundColor: workspace.color, width: 8, height: 8, borderRadius: 4 }}
+      />
       {/* Header */}
       <div
         className="flex items-center gap-2 px-4 py-3 rounded-t-2xl"

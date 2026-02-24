@@ -1,8 +1,7 @@
 import { memo, useCallback, useState } from 'react';
-import { type NodeProps } from '@xyflow/react';
-import { Terminal, Sparkles, Circle, Trash2, Maximize2, Monitor, Copy, Check, X, GitFork } from 'lucide-react';
+import { type NodeProps, NodeResizer } from '@xyflow/react';
+import { Terminal, Sparkles, Circle, Trash2, Monitor, Copy, Check, X, GitFork } from 'lucide-react';
 import type { SessionNodeData } from '@/types';
-import { useCanvasStore } from '@/stores/canvas.store';
 import { useSessionStore } from '@/stores/session.store';
 import { api } from '@/lib/api';
 import { MiniTerminalView } from '../terminal/MiniTerminalView';
@@ -19,8 +18,6 @@ const statusColors: Record<string, string> = {
 
 export const SessionNode = memo(function SessionNode({ data }: Props) {
   const { session, workspaceSettings, viewers } = data;
-  const openPanel = useCanvasStore((s) => s.openPanel);
-  const closePanelTab = useCanvasStore((s) => s.closePanelTab);
   const addSession = useSessionStore((s) => s.addSession);
   const removeSession = useSessionStore((s) => s.removeSession);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -29,24 +26,19 @@ export const SessionNode = memo(function SessionNode({ data }: Props) {
   const [showJoin, setShowJoin] = useState(false);
   const [copied, setCopied] = useState<'win' | 'unix' | null>(null);
 
-  const handleExpand = useCallback(() => {
-    openPanel(session.id);
-  }, [session.id, openPanel]);
-
   const handleDelete = useCallback(async () => {
     if (deleting) return;
     setDeleting(true);
     try {
       await api.sessions.kill(session.id);
       removeSession(session.id);
-      closePanelTab(session.id);
     } catch (err) {
       console.error('Delete session failed:', err);
     } finally {
       setDeleting(false);
       setConfirmDelete(false);
     }
-  }, [session.id, deleting, removeSession, closePanelTab]);
+  }, [session.id, deleting, removeSession]);
 
   const handleCopy = useCallback(async (target: 'win' | 'unix') => {
     const cmd = target === 'win'
@@ -70,19 +62,25 @@ export const SessionNode = memo(function SessionNode({ data }: Props) {
         claudeResumeId: session.claudeSessionId,
       });
       addSession(forked);
-      openPanel(forked.id);
     } catch (err) {
       console.error('Fork session failed:', err);
     } finally {
       setForking(false);
     }
-  }, [session, forking, workspaceSettings, addSession, openPanel]);
+  }, [session, forking, workspaceSettings, addSession]);
 
-  const Icon = session.type === 'shell' ? Terminal : Sparkles;
+  const isClaude = session.type === 'claude' && !!session.claudeSessionId;
+  const Icon = isClaude ? Sparkles : Terminal;
   const isActive = session.status === 'running' || session.status === 'idle';
 
   return (
     <div className="w-full h-full rounded-xl bg-bg-secondary border border-border hover:border-border-bright transition-colors flex flex-col">
+      <NodeResizer
+        minWidth={320}
+        minHeight={250}
+        color="#818cf8"
+        handleStyle={{ backgroundColor: '#818cf8', width: 8, height: 8, borderRadius: 4 }}
+      />
       {/* Header — draggable area */}
       <div className="flex items-center gap-2 px-3 py-2 border-b border-border shrink-0">
         <Icon size={14} className="text-text-muted" />
@@ -99,7 +97,7 @@ export const SessionNode = memo(function SessionNode({ data }: Props) {
           >
             <Monitor size={12} />
           </button>
-          {session.type === 'claude' && session.claudeSessionId && (
+          {isClaude && (
             <button
               onClick={handleFork}
               disabled={forking}
@@ -109,13 +107,6 @@ export const SessionNode = memo(function SessionNode({ data }: Props) {
               <GitFork size={12} />
             </button>
           )}
-          <button
-            onClick={handleExpand}
-            className="p-1 rounded text-text-muted hover:text-text-primary transition-colors"
-            title="Expand in panel"
-          >
-            <Maximize2 size={12} />
-          </button>
           {!confirmDelete ? (
             <button
               onClick={() => setConfirmDelete(true)}
@@ -177,7 +168,6 @@ export const SessionNode = memo(function SessionNode({ data }: Props) {
       {/* Terminal preview — nodrag/nowheel/nopan to prevent ReactFlow conflicts */}
       <div
         className="flex-1 bg-[#0a0a0f] rounded-b-xl mx-1 mt-1 overflow-hidden relative min-h-0 nodrag nowheel nopan"
-        onDoubleClick={handleExpand}
       >
         {isActive ? (
           <MiniTerminalView sessionId={session.id} active={isActive} />

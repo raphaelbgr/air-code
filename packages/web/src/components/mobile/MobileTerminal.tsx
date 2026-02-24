@@ -1,6 +1,6 @@
 import { ArrowLeft } from 'lucide-react';
 import { useSessionStore } from '@/stores/session.store';
-import { TerminalView } from '../terminal/TerminalView';
+import { MiniTerminalView } from '../terminal/MiniTerminalView';
 
 interface MobileTerminalProps {
   sessionId: string;
@@ -24,7 +24,7 @@ export function MobileTerminal({ sessionId, onBack }: MobileTerminalProps) {
 
       {/* Terminal */}
       <div className="flex-1 overflow-hidden">
-        <TerminalView sessionId={sessionId} />
+        <MiniTerminalView sessionId={sessionId} active={true} />
       </div>
     </div>
   );

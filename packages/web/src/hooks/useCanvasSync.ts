@@ -1,39 +1,53 @@
 import { useEffect, useRef } from 'react';
 import { api } from '@/lib/api';
-import { useCanvasStore } from '@/stores/canvas.store';
-import type { CanvasState } from '@/types';
+import { useCanvasStore, type SavedNodeLayout } from '@/stores/canvas.store';
 
 /**
- * Periodically save canvas layout to the server.
- * Debounced: saves at most every 5 seconds on changes.
+ * Auto-save canvas layout every 15 seconds.
+ * Only saves layout metadata (position, size) — not full node data.
+ * Tracks save status for the cloud icon indicator.
  */
 export function useCanvasSync() {
-  const nodes = useCanvasStore((s) => s.nodes);
-  const edges = useCanvasStore((s) => s.edges);
-  const viewport = useCanvasStore((s) => s.viewport);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const initialized = useCanvasStore((s) => s.initialized);
+  const setSaveStatus = useCanvasStore((s) => s.setSaveStatus);
   const lastSavedRef = useRef<string>('');
 
   useEffect(() => {
-    const state: CanvasState = { nodes, edges, viewport };
-    const serialized = JSON.stringify(state);
+    if (!initialized) return;
 
-    // Skip if nothing changed
-    if (serialized === lastSavedRef.current) return;
+    const interval = setInterval(async () => {
+      const { nodes, edges, viewport } = useCanvasStore.getState();
 
-    // Debounce save
-    if (timerRef.current) clearTimeout(timerRef.current);
-    timerRef.current = setTimeout(async () => {
+      // Strip data from nodes — only save layout metadata
+      const layoutNodes: SavedNodeLayout[] = nodes.map((n) => ({
+        id: n.id,
+        type: n.type,
+        position: n.position,
+        style: n.style as Record<string, unknown> | undefined,
+        parentId: n.parentId,
+      }));
+
+      const state = { nodes: layoutNodes, edges, viewport };
+      const serialized = JSON.stringify(state);
+
+      if (serialized === lastSavedRef.current) return;
+
+      setSaveStatus('saving');
       try {
         await api.canvas.save(state);
         lastSavedRef.current = serialized;
+        setSaveStatus('saved');
+        setTimeout(() => {
+          // Only reset to idle if still 'saved' (not overridden by a new save)
+          if (useCanvasStore.getState().saveStatus === 'saved') {
+            setSaveStatus('idle');
+          }
+        }, 3000);
       } catch {
-        // Silently ignore save failures
+        setSaveStatus('error');
       }
-    }, 5000);
+    }, 15000);
 
-    return () => {
-      if (timerRef.current) clearTimeout(timerRef.current);
-    };
-  }, [nodes, edges, viewport]);
+    return () => clearInterval(interval);
+  }, [initialized, setSaveStatus]);
 }
