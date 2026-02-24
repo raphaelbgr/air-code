@@ -1,10 +1,14 @@
 import { Router, type Response } from 'express';
 import { z } from 'zod';
 import { v4 as uuid } from 'uuid';
-import type { ApiResponse, Workspace, WorkspaceSettings, DetectedWorkspace, ClaudeSession } from '@claude-air/shared';
+import pino from 'pino';
+import type { ApiResponse, Workspace, WorkspaceSettings, DetectedWorkspace, ClaudeSession, Session } from '@claude-air/shared';
 import { getDb } from '../db/database.js';
 import { detectWorkspaces, getClaudeStatsMap, getClaudeSessionsForPath } from '../services/workspace-detector.service.js';
+import { SmsProxy } from '../services/sms-proxy.js';
 import type { AuthenticatedRequest } from '../types.js';
+
+const log = pino({ name: 'workspaces' });
 
 const COLORS = ['#3b82f6', '#ef4444', '#22c55e', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316'];
 
@@ -69,7 +73,7 @@ function paramId(req: AuthenticatedRequest): string {
   return Array.isArray(id) ? id[0] : id;
 }
 
-export function createWorkspaceRoutes(): Router {
+export function createWorkspaceRoutes(smsProxy: SmsProxy): Router {
   const router = Router();
 
   // ── Detect workspaces from ~/.claude/projects/ ──
@@ -233,15 +237,40 @@ export function createWorkspaceRoutes(): Router {
     }
   });
 
-  // ── Delete workspace ──
-  router.delete('/:id', (req: AuthenticatedRequest, res: Response) => {
+  // ── Delete workspace (cascade-kills all sessions) ──
+  router.delete('/:id', async (req: AuthenticatedRequest, res: Response) => {
     const db = getDb();
     const id = paramId(req);
-    const result = db.prepare('DELETE FROM workspaces WHERE id = ?').run(id);
-    if (result.changes === 0) {
+
+    // Get workspace path before deleting
+    const workspace = db.prepare('SELECT path FROM workspaces WHERE id = ?').get(id) as { path: string } | undefined;
+    if (!workspace) {
       res.status(404).json({ ok: false, error: 'Workspace not found' } satisfies ApiResponse<never>);
       return;
     }
+
+    // Kill all sessions belonging to this workspace via SMS
+    if (workspace.path) {
+      try {
+        const sessionsData = await smsProxy.listSessions() as { ok: boolean; data: Session[] };
+        const sessions = sessionsData.data || [];
+        const toKill = sessions.filter(
+          (s) => s.workspacePath && s.workspacePath.toLowerCase() === workspace.path.toLowerCase(),
+        );
+        for (const s of toKill) {
+          try {
+            await smsProxy.killSession(s.id);
+            log.info({ sessionId: s.id, workspace: workspace.path }, 'killed session for deleted workspace');
+          } catch (err) {
+            log.warn({ err, sessionId: s.id }, 'failed to kill session during workspace delete');
+          }
+        }
+      } catch (err) {
+        log.warn({ err }, 'failed to list sessions for workspace cascade delete');
+      }
+    }
+
+    db.prepare('DELETE FROM workspaces WHERE id = ?').run(id);
     res.json({ ok: true } satisfies ApiResponse<void>);
   });
 

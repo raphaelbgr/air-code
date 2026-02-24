@@ -291,8 +291,9 @@ export class SessionService {
   }
 
   /**
-   * Clean up orphan tmux sessions that aren't tracked in the DB,
-   * and mark DB sessions as stopped if their tmux session is dead.
+   * Reconcile tmux sessions with the DB on startup:
+   * - Re-adopt orphan tmux sessions (alive but not in DB) by creating DB records
+   * - Remove DB sessions whose tmux is dead
    */
   cleanupOrphans(): void {
     if (this.mockMode) return;
@@ -305,44 +306,56 @@ export class SessionService {
         .map(s => s.trim())
         .filter(s => s.startsWith(TMUX_SESSION_PREFIX));
     } catch {
-      // No tmux sessions at all
       aliveSessions = [];
     }
 
     // 2. Get all tracked tmux session names from DB
     const db = getDb();
-    const dbRows = db.prepare(
-      "SELECT id, tmux_session, status FROM sessions WHERE status IN ('running', 'idle')"
-    ).all() as { id: string; tmux_session: string; status: string }[];
+    const dbRows = db.prepare('SELECT id, tmux_session, status FROM sessions').all() as {
+      id: string; tmux_session: string; status: string;
+    }[];
     const trackedNames = new Set(dbRows.map(r => r.tmux_session));
 
-    // 3. Kill tmux sessions not tracked in DB
-    let killed = 0;
+    // 3. Re-adopt orphan tmux sessions (alive but not in DB)
+    let adopted = 0;
     for (const tmuxName of aliveSessions) {
       if (!trackedNames.has(tmuxName)) {
+        // Query the pane's working directory to determine workspace
+        let workspacePath = '';
         try {
-          tryTmux('kill-session', '-t', tmuxName);
-          killed++;
-          log.info({ tmuxName }, 'killed orphan tmux session');
-        } catch (err) {
-          log.warn({ err, tmuxName }, 'failed to kill orphan tmux session');
-        }
+          workspacePath = tryTmux(
+            'display-message', '-t', tmuxName, '-p', '#{pane_current_path}',
+          ).trim();
+        } catch { /* fallback to empty */ }
+
+        // Derive a session id from the tmux name (cca-<8chars> → use as uuid prefix)
+        const shortId = tmuxName.replace(TMUX_SESSION_PREFIX, '');
+        const id = `${shortId}-0000-0000-0000-000000000000`;
+        const dirName = workspacePath.split(/[/\\]/).pop() || tmuxName;
+
+        db.prepare(`
+          INSERT OR IGNORE INTO sessions (id, name, tmux_session, workspace_path, status, type, skip_permissions)
+          VALUES (?, ?, ?, ?, 'running', 'shell', 0)
+        `).run(id, `${dirName} (recovered)`, tmuxName, workspacePath);
+
+        adopted++;
+        log.info({ tmuxName, id, workspacePath }, 'adopted orphan tmux session');
       }
     }
 
-    // 4. Mark DB sessions as stopped if their tmux session is dead
+    // 4. Remove DB sessions whose tmux is dead
     const aliveSet = new Set(aliveSessions);
-    let marked = 0;
+    let removed = 0;
     for (const row of dbRows) {
       if (!aliveSet.has(row.tmux_session)) {
-        this.updateStatus(row.id, 'stopped');
-        marked++;
-        log.info({ id: row.id, tmux: row.tmux_session }, 'marked dead session as stopped');
+        db.prepare('DELETE FROM sessions WHERE id = ?').run(row.id);
+        removed++;
+        log.info({ id: row.id, tmux: row.tmux_session }, 'removed dead session from DB');
       }
     }
 
-    if (killed > 0 || marked > 0) {
-      log.info({ killed, marked }, 'orphan cleanup complete');
+    if (adopted > 0 || removed > 0) {
+      log.info({ adopted, removed }, 'session reconciliation complete');
     }
   }
 

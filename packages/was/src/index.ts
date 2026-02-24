@@ -69,7 +69,7 @@ app.use('/api/health', createHealthRoutes(smsProxy));
 // Protected routes
 app.use('/api/sessions', requireAuth, createSessionRoutes(smsProxy));
 app.use('/api/canvas', requireAuth, createCanvasRoutes(canvasService));
-app.use('/api/workspaces', requireAuth, createWorkspaceRoutes());
+app.use('/api/workspaces', requireAuth, createWorkspaceRoutes(smsProxy));
 app.use('/api/agent', requireAuth, createAgentRoutes(agentService));
 
 // Serve static frontend in production
