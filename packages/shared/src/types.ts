@@ -33,6 +33,8 @@ export interface ClaudeSession {
   summary: string;
   messageCount: number;
   lastActive: string;
+  diskSize?: number;
+  gitBranch?: string;
 }
 
 export interface SendKeysRequest {

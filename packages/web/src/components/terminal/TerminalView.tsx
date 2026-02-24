@@ -26,6 +26,25 @@ export function TerminalView({ sessionId, isSelected }: TerminalViewProps) {
   const termRef = useRef<Terminal | null>(null);
   const setTerminalMeta = useTerminalStore((s) => s.setTerminalMeta);
 
+  // Native wheel handler: must be addEventListener (not React onWheel) so it fires
+  // BEFORE ReactFlow's native listener. Plain scroll → terminal scrolls (stop propagation).
+  // Ctrl+scroll → bubbles to ReactFlow for canvas zoom (prevent xterm scroll via preventDefault).
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const handler = (e: WheelEvent) => {
+      if (e.ctrlKey) {
+        // Ctrl+scroll: prevent xterm from scrolling, let event bubble to ReactFlow for zoom
+        e.preventDefault();
+      } else {
+        // Plain scroll: stop propagation so ReactFlow doesn't pan, xterm scrolls its buffer
+        e.stopPropagation();
+      }
+    };
+    container.addEventListener('wheel', handler, { passive: false });
+    return () => container.removeEventListener('wheel', handler);
+  }, []);
+
   // Create terminal once on mount — same sizing for both modes
   useEffect(() => {
     const container = containerRef.current;
@@ -49,6 +68,19 @@ export function TerminalView({ sessionId, isSelected }: TerminalViewProps) {
 
     term.open(container);
     termRef.current = term;
+
+    // Ctrl+C: copy if text selected, otherwise send \x03 (interrupt) to PTY
+    // Ctrl+V: let browser handle paste (xterm picks it up via paste event)
+    term.attachCustomKeyEventHandler((event) => {
+      if (event.type !== 'keydown') return true;
+      if (event.ctrlKey && event.key === 'c' && term.hasSelection()) {
+        return false; // browser copies selection
+      }
+      if (event.ctrlKey && event.key === 'v') {
+        return false; // browser pastes
+      }
+      return true;
+    });
 
     // Subscribe with preview — live data only, no scrollback replay
     const unsubscribe = terminalChannel.subscribe(sessionId, (data) => {
@@ -94,13 +126,6 @@ export function TerminalView({ sessionId, isSelected }: TerminalViewProps) {
     };
   }, [sessionId, isSelected, setTerminalMeta]);
 
-  const handleWheel = useCallback((e: React.WheelEvent) => {
-    if (!e.ctrlKey) {
-      e.stopPropagation();
-    }
-    // When ctrlKey is held, let the event bubble up to ReactFlow for canvas zoom
-  }, []);
-
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
   }, []);
@@ -109,7 +134,6 @@ export function TerminalView({ sessionId, isSelected }: TerminalViewProps) {
     <div
       ref={containerRef}
       className="w-full h-full"
-      onWheel={handleWheel}
       onMouseDown={handleMouseDown}
     />
   );

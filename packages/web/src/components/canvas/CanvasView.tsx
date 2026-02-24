@@ -125,6 +125,9 @@ export function CanvasView() {
         fitView={!initialized}
         minZoom={0.1}
         maxZoom={2}
+        zoomOnScroll={false}
+        panOnScroll
+        zoomActivationKeyCode="Control"
         proOptions={{ hideAttribution: true }}
         className="bg-bg-primary"
       >
@@ -138,7 +141,9 @@ export function CanvasView() {
       </ReactFlow>
 
       <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-3 px-3 py-1.5 rounded-full bg-black/40 border border-white/10 backdrop-blur-sm text-[11px] text-white/50 pointer-events-none select-none">
+        <span><kbd className="px-1 py-0.5 rounded bg-white/10 text-white/60 font-mono text-[10px]">Scroll</kbd> Pan</span>
         <span><kbd className="px-1 py-0.5 rounded bg-white/10 text-white/60 font-mono text-[10px]">Ctrl+Scroll</kbd> Zoom</span>
+        <span><kbd className="px-1 py-0.5 rounded bg-white/10 text-white/60 font-mono text-[10px]">Drag</kbd> Move</span>
         <span><kbd className="px-1 py-0.5 rounded bg-white/10 text-white/60 font-mono text-[10px]">Ctrl+K</kbd> Search</span>
         <span><kbd className="px-1 py-0.5 rounded bg-white/10 text-white/60 font-mono text-[10px]">Esc</kbd> Deselect</span>
       </div>

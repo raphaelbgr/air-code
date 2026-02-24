@@ -21,6 +21,7 @@ interface SessionEntry {
   modified: string;
   gitBranch: string;
   projectPath: string;
+  diskSize: number;
 }
 
 interface SessionsIndex {
@@ -291,6 +292,7 @@ async function scanJsonlSessions(projectDir: string, workspacePath: string): Pro
         modified: fileStat.mtime.toISOString(),
         gitBranch,
         projectPath: workspacePath,
+        diskSize: fileStat.size,
       });
     } catch {
       // Skip files that can't be read

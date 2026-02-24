@@ -29,6 +29,7 @@ export const SessionNode = memo(function SessionNode({ data }: Props) {
   const [reconnecting, setReconnecting] = useState(false);
   const [showJoin, setShowJoin] = useState(false);
   const [copied, setCopied] = useState<'win' | 'unix' | null>(null);
+  const [resizing, setResizing] = useState(false);
 
   const handleDelete = useCallback(async () => {
     if (deleting) return;
@@ -102,7 +103,7 @@ export const SessionNode = memo(function SessionNode({ data }: Props) {
 
   return (
     <div
-      className="w-full h-full rounded-xl bg-bg-secondary transition-colors flex flex-col"
+      className={`w-full h-full rounded-xl bg-bg-secondary transition-colors flex flex-col ${resizing ? 'is-resizing' : ''}`}
       style={{
         borderWidth: 2,
         borderStyle: 'solid',
@@ -118,7 +119,16 @@ export const SessionNode = memo(function SessionNode({ data }: Props) {
         minWidth={320}
         minHeight={250}
         color="#818cf8"
-        handleStyle={{ backgroundColor: '#818cf8', width: 8, height: 8, borderRadius: 4 }}
+        onResizeStart={() => setResizing(true)}
+        onResizeEnd={() => setResizing(false)}
+        handleStyle={{
+          backgroundColor: '#818cf8',
+          width: 8,
+          height: 8,
+          borderRadius: 4,
+          opacity: resizing ? 1 : 0,
+          transition: 'opacity 0.15s',
+        }}
       />
       {/* Header — draggable area */}
       <div className="flex items-center gap-2 px-3 py-2 border-b border-border shrink-0">
@@ -228,7 +238,7 @@ export const SessionNode = memo(function SessionNode({ data }: Props) {
 
       {/* Terminal preview — nodrag/nowheel/nopan to prevent ReactFlow conflicts */}
       <div
-        className="flex-1 bg-[#0a0a0f] rounded-b-xl mx-1 mt-1 overflow-hidden relative min-h-0 nodrag nowheel nopan"
+        className="flex-1 bg-[#0a0a0f] rounded-b-xl mx-1 mt-1 overflow-hidden relative min-h-0 nodrag nopan"
         onClick={() => isActive && setActiveSession(session.id)}
       >
         {isActive ? (
@@ -251,6 +261,13 @@ export const SessionNode = memo(function SessionNode({ data }: Props) {
           </div>
         )}
       </div>
+
+      {/* PTY Claude warning */}
+      {isPty && session.type === 'claude' && isActive && (
+        <div className="px-2 py-1 text-[9px] text-amber-400/70 bg-amber-500/5 border-t border-amber-500/10 shrink-0">
+          Don't use /resume here — open a new session from the launcher instead.
+        </div>
+      )}
 
       {/* Footer */}
       <div className="flex items-center justify-between px-3 py-1.5 text-xs text-text-muted shrink-0">

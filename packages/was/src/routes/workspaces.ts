@@ -229,6 +229,8 @@ export function createWorkspaceRoutes(smsProxy: SmsProxy): Router {
         summary: e.summary || 'Untitled conversation',
         messageCount: e.messageCount,
         lastActive: e.modified,
+        diskSize: e.diskSize,
+        gitBranch: e.gitBranch || undefined,
       }));
 
       const body: ApiResponse<ClaudeSession[]> = { ok: true, data: sessions };

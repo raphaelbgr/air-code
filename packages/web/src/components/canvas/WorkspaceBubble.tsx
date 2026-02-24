@@ -1,4 +1,5 @@
 import { memo, useCallback, useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { type NodeProps, NodeResizer } from '@xyflow/react';
 import { Folder, MessageSquare, TerminalSquare, Sparkles, Settings, ChevronDown } from 'lucide-react';
 import type { Workspace, Session } from '@claude-air/shared';
@@ -16,16 +17,23 @@ export const WorkspaceBubble = memo(function WorkspaceBubble({ data }: Props) {
   const [workspace, setWorkspace] = useState<Workspace>(initialWorkspace);
   const addSession = useSessionStore((s) => s.addSession);
   const setActiveSession = useCanvasStore((s) => s.setActiveSession);
-  const [creatingShell, setCreatingShell] = useState(false);
+  const [creating, setCreating] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showLauncher, setShowLauncher] = useState(false);
-  const [showPsMenu, setShowPsMenu] = useState(false);
-  const [creatingPty, setCreatingPty] = useState(false);
-  const psMenuRef = useRef<HTMLDivElement>(null);
+  const [launcherBackend, setLauncherBackend] = useState<'pty' | undefined>();
+  const [showTermMenu, setShowTermMenu] = useState(false);
+  const [showClaudeMenu, setShowClaudeMenu] = useState(false);
+  const [resizing, setResizing] = useState(false);
+  const termBtnRef = useRef<HTMLButtonElement>(null);
+  const claudeBtnRef = useRef<HTMLButtonElement>(null);
+  const termMenuRef = useRef<HTMLDivElement>(null);
+  const claudeMenuRef = useRef<HTMLDivElement>(null);
+  const [menuPos, setMenuPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
 
   const handleOpenShell = useCallback(async () => {
-    if (!workspace.path || creatingShell) return;
-    setCreatingShell(true);
+    if (!workspace.path || creating) return;
+    setCreating(true);
+    setShowTermMenu(false);
     try {
       const session = await api.sessions.create({
         name: `${workspace.name} (shell)`,
@@ -37,9 +45,9 @@ export const WorkspaceBubble = memo(function WorkspaceBubble({ data }: Props) {
     } catch (err) {
       console.error('Failed to create shell session:', err);
     } finally {
-      setCreatingShell(false);
+      setCreating(false);
     }
-  }, [workspace, creatingShell, addSession, setActiveSession]);
+  }, [workspace, creating, addSession, setActiveSession]);
 
   const handleClaudeCreated = useCallback((session: Session) => {
     addSession(session);
@@ -47,9 +55,10 @@ export const WorkspaceBubble = memo(function WorkspaceBubble({ data }: Props) {
   }, [addSession, setActiveSession]);
 
   const handleCreatePty = useCallback(async (type: 'shell' | 'claude') => {
-    if (!workspace.path || creatingPty) return;
-    setCreatingPty(true);
-    setShowPsMenu(false);
+    if (!workspace.path || creating) return;
+    setCreating(true);
+    setShowTermMenu(false);
+    setShowClaudeMenu(false);
     try {
       const suffix = type === 'shell' ? '(pwsh)' : '(claude-ps)';
       const session = await api.sessions.create({
@@ -65,25 +74,44 @@ export const WorkspaceBubble = memo(function WorkspaceBubble({ data }: Props) {
     } catch (err) {
       console.error('Failed to create PTY session:', err);
     } finally {
-      setCreatingPty(false);
+      setCreating(false);
     }
-  }, [workspace, creatingPty, addSession, setActiveSession]);
+  }, [workspace, creating, addSession, setActiveSession]);
 
-  // Close PS> dropdown on click outside
+  const openMenu = useCallback((menu: 'term' | 'claude') => {
+    const btnRef = menu === 'term' ? termBtnRef : claudeBtnRef;
+    const rect = btnRef.current?.getBoundingClientRect();
+    if (rect) {
+      setMenuPos({ top: rect.bottom + 4, left: rect.right });
+    }
+    if (menu === 'term') {
+      setShowTermMenu((v) => !v);
+      setShowClaudeMenu(false);
+    } else {
+      setShowClaudeMenu((v) => !v);
+      setShowTermMenu(false);
+    }
+  }, []);
+
+  // Close dropdowns on click outside
   useEffect(() => {
-    if (!showPsMenu) return;
+    if (!showTermMenu && !showClaudeMenu) return;
     const handleClick = (e: MouseEvent) => {
-      if (psMenuRef.current && !psMenuRef.current.contains(e.target as Node)) {
-        setShowPsMenu(false);
+      const target = e.target as Node;
+      if (showTermMenu && termMenuRef.current && !termMenuRef.current.contains(target) && !termBtnRef.current?.contains(target)) {
+        setShowTermMenu(false);
+      }
+      if (showClaudeMenu && claudeMenuRef.current && !claudeMenuRef.current.contains(target) && !claudeBtnRef.current?.contains(target)) {
+        setShowClaudeMenu(false);
       }
     };
     document.addEventListener('mousedown', handleClick);
     return () => document.removeEventListener('mousedown', handleClick);
-  }, [showPsMenu]);
+  }, [showTermMenu, showClaudeMenu]);
 
   return (
     <div
-      className="w-full h-full rounded-2xl border-2 transition-colors"
+      className={`w-full h-full rounded-2xl border-2 transition-colors ${resizing ? 'is-resizing' : ''}`}
       style={{
         borderColor: workspace.color + '60',
         backgroundColor: workspace.color + '08',
@@ -93,7 +121,16 @@ export const WorkspaceBubble = memo(function WorkspaceBubble({ data }: Props) {
         minWidth={400}
         minHeight={300}
         color={workspace.color}
-        handleStyle={{ backgroundColor: workspace.color, width: 8, height: 8, borderRadius: 4 }}
+        onResizeStart={() => setResizing(true)}
+        onResizeEnd={() => setResizing(false)}
+        handleStyle={{
+          backgroundColor: workspace.color,
+          width: 8,
+          height: 8,
+          borderRadius: 4,
+          opacity: resizing ? 1 : 0,
+          transition: 'opacity 0.15s',
+        }}
       />
       {/* Header */}
       <div
@@ -124,55 +161,91 @@ export const WorkspaceBubble = memo(function WorkspaceBubble({ data }: Props) {
               >
                 <Settings size={12} />
               </button>
-              <button
-                onClick={handleOpenShell}
-                disabled={creatingShell}
-                className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full transition-colors hover:bg-bg-tertiary text-text-muted hover:text-text-primary disabled:opacity-50"
-                title="Open WSL Terminal"
-              >
-                <TerminalSquare size={12} />
-              </button>
-              {/* PS> dropdown */}
-              <div className="relative nodrag" ref={psMenuRef}>
+              {/* Terminal dropdown trigger */}
+              <div className="nodrag">
                 <button
-                  onClick={() => setShowPsMenu(!showPsMenu)}
-                  disabled={creatingPty}
-                  className="flex items-center gap-0.5 text-xs px-2 py-0.5 rounded-full transition-colors hover:bg-bg-tertiary text-text-muted hover:text-text-primary disabled:opacity-50 font-mono"
-                  title="Native PowerShell sessions"
+                  ref={termBtnRef}
+                  onClick={() => openMenu('term')}
+                  disabled={creating}
+                  className="flex items-center gap-0.5 text-xs px-2 py-0.5 rounded-full transition-colors hover:bg-bg-tertiary text-text-muted hover:text-text-primary disabled:opacity-50"
+                  title="Open Terminal"
                 >
-                  PS&gt;
+                  <TerminalSquare size={12} />
                   <ChevronDown size={10} />
                 </button>
-                {showPsMenu && (
-                  <div className="absolute top-full right-0 mt-1 bg-bg-secondary border border-border rounded-lg shadow-lg py-1 z-50 min-w-[160px]">
-                    <button
-                      onClick={() => handleCreatePty('shell')}
-                      className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-text-primary hover:bg-bg-tertiary transition-colors"
-                    >
-                      <TerminalSquare size={12} />
-                      Terminal
-                    </button>
-                    <button
-                      onClick={() => handleCreatePty('claude')}
-                      className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-text-primary hover:bg-bg-tertiary transition-colors"
-                    >
-                      <Sparkles size={12} />
-                      Claude Code
-                    </button>
-                  </div>
-                )}
               </div>
-              <button
-                onClick={() => setShowLauncher(true)}
-                className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full transition-colors hover:bg-bg-tertiary text-text-muted hover:text-text-primary"
-                title="Open Claude Code"
-              >
-                <Sparkles size={12} />
-              </button>
+              {/* Code Assistant dropdown trigger */}
+              <div className="nodrag">
+                <button
+                  ref={claudeBtnRef}
+                  onClick={() => openMenu('claude')}
+                  disabled={creating}
+                  className="flex items-center gap-0.5 text-xs px-2 py-0.5 rounded-full transition-colors hover:bg-bg-tertiary text-text-muted hover:text-text-primary disabled:opacity-50"
+                  title="Open Code Assistant"
+                >
+                  <Sparkles size={12} />
+                  <ChevronDown size={10} />
+                </button>
+              </div>
             </>
           )}
         </div>
       </div>
+
+      {/* Dropdown portals — rendered outside React Flow's stacking context */}
+      {showTermMenu && createPortal(
+        <div
+          ref={termMenuRef}
+          className="fixed bg-bg-secondary border border-border rounded-lg shadow-lg py-1 min-w-[200px]"
+          style={{ top: menuPos.top, left: menuPos.left, transform: 'translateX(-100%)', zIndex: 9999 }}
+        >
+          <button
+            onClick={() => handleCreatePty('shell')}
+            className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-text-primary hover:bg-bg-tertiary transition-colors"
+            title="Native Windows PowerShell — ephemeral, dies with server"
+          >
+            <span className="font-mono text-[10px] text-text-muted w-5">PS&gt;</span>
+            PowerShell Terminal
+          </button>
+          <button
+            onClick={handleOpenShell}
+            className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-text-primary hover:bg-bg-tertiary transition-colors"
+            title="Linux shell via WSL — survives server restarts"
+          >
+            <TerminalSquare size={12} className="text-text-muted w-5" />
+            WSL Terminal (tmux)
+          </button>
+        </div>,
+        document.body,
+      )}
+
+      {showClaudeMenu && createPortal(
+        <div
+          ref={claudeMenuRef}
+          className="fixed bg-bg-secondary border border-border rounded-lg shadow-lg py-1 min-w-[200px]"
+          style={{ top: menuPos.top, left: menuPos.left, transform: 'translateX(-100%)', zIndex: 9999 }}
+        >
+          <div className="text-[10px] text-text-muted uppercase tracking-wider px-3 py-1">Claude Code</div>
+          <div className="border-t border-border mx-2 my-0.5" />
+          <button
+            onClick={() => { setShowClaudeMenu(false); setLauncherBackend('pty'); setShowLauncher(true); }}
+            className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-text-primary hover:bg-bg-tertiary transition-colors"
+            title="Run Claude Code in native PowerShell"
+          >
+            <span className="font-mono text-[10px] text-text-muted w-5">PS&gt;</span>
+            Open in PowerShell
+          </button>
+          <button
+            onClick={() => { setShowClaudeMenu(false); setLauncherBackend(undefined); setShowLauncher(true); }}
+            className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-text-primary hover:bg-bg-tertiary transition-colors"
+            title="Run Claude Code in WSL — browse & resume previous sessions"
+          >
+            <TerminalSquare size={12} className="text-text-muted w-5" />
+            Open in WSL (tmux)
+          </button>
+        </div>,
+        document.body,
+      )}
 
       {/* Workspace path + description */}
       <div className="px-4 mt-1 space-y-0.5">
@@ -199,6 +272,7 @@ export const WorkspaceBubble = memo(function WorkspaceBubble({ data }: Props) {
           workspace={workspace}
           onClose={() => setShowLauncher(false)}
           onCreated={handleClaudeCreated}
+          backend={launcherBackend}
         />
       )}
     </div>

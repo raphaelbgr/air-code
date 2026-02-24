@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { existsSync, symlinkSync, lstatSync } from 'node:fs';
+import { existsSync, symlinkSync, lstatSync, readdirSync, watch, type FSWatcher, mkdirSync } from 'node:fs';
 import { v4 as uuid } from 'uuid';
 import pino from 'pino';
 import type { Session, CreateSessionRequest, SessionBackend } from '@claude-air/shared';
@@ -135,6 +135,7 @@ function tryTmux(...args: string[]): string {
 
 export class SessionService {
   private controllers: Map<string, ControlMode> = new Map();
+  private sessionWatchers: Map<string, FSWatcher> = new Map();
   private multiplexers: MultiplexerRegistry;
   private mockMode: boolean;
 
@@ -178,12 +179,18 @@ export class SessionService {
     if (backend === 'pty') {
       // Direct PTY — native PowerShell (or bash on Linux), no tmux
       const sessionType = req.type || 'claude';
+      const initialClaudeId = req.claudeResumeId || null;
       db.prepare(`
         INSERT INTO sessions (id, name, tmux_session, workspace_path, status, type, skip_permissions, claude_session_id, backend)
         VALUES (?, ?, ?, ?, 'running', ?, ?, ?, 'pty')
-      `).run(id, req.name, tmuxName, req.workspacePath, sessionType, req.skipPermissions ? 1 : 0, null);
+      `).run(id, req.name, tmuxName, req.workspacePath, sessionType, req.skipPermissions ? 1 : 0, initialClaudeId);
 
       this.attachPtyDirect(id, req.workspacePath, req);
+
+      // For new Claude sessions (not resuming), watch for the session file
+      if (sessionType === 'claude' && !initialClaudeId) {
+        this.watchForClaudeSession(id, req.workspacePath);
+      }
 
       const row = db.prepare('SELECT * FROM sessions WHERE id = ?').get(id) as SessionRow;
       log.info({ id, tmuxName, workspace: req.workspacePath, backend: 'pty' }, 'PTY session created');
@@ -284,6 +291,63 @@ export class SessionService {
     }
   }
 
+  /**
+   * Watch ~/.claude/projects/<folder>/ for a new .jsonl file using fs.watch.
+   * Snapshot existing files first, then wait for a new one to appear.
+   * Event-driven — no race condition, no polling.
+   */
+  private watchForClaudeSession(sessionId: string, workspacePath: string): void {
+    try {
+      const projectFolder = encodeWindowsFolderName(workspacePath);
+      const projectDir = join(homedir(), '.claude', 'projects', projectFolder);
+
+      // Ensure the directory exists (Claude may not have created it yet)
+      if (!existsSync(projectDir)) {
+        mkdirSync(projectDir, { recursive: true });
+      }
+
+      // Snapshot existing .jsonl files so we can detect the new one
+      const existing = new Set(
+        readdirSync(projectDir).filter(f => f.endsWith('.jsonl'))
+      );
+
+      const watcher = watch(projectDir, (eventType, filename) => {
+        if (!filename || !filename.endsWith('.jsonl')) return;
+        if (existing.has(filename)) return;
+
+        // New .jsonl file — this is the Claude session ID
+        const claudeSessionId = filename.replace('.jsonl', '');
+        const db = getDb();
+        db.prepare('UPDATE sessions SET claude_session_id = ? WHERE id = ?')
+          .run(claudeSessionId, sessionId);
+        log.info({ sessionId, claudeSessionId }, 'detected Claude session ID via fs.watch');
+
+        // Clean up watcher
+        watcher.close();
+        this.sessionWatchers.delete(sessionId);
+      });
+
+      watcher.on('error', (err) => {
+        log.warn({ err, sessionId }, 'fs.watch error on projects dir');
+        watcher.close();
+        this.sessionWatchers.delete(sessionId);
+      });
+
+      this.sessionWatchers.set(sessionId, watcher);
+
+      // Safety timeout — stop watching after 60s if nothing detected
+      setTimeout(() => {
+        if (this.sessionWatchers.has(sessionId)) {
+          watcher.close();
+          this.sessionWatchers.delete(sessionId);
+          log.warn({ sessionId }, 'Claude session ID detection timed out');
+        }
+      }, 60000);
+    } catch (err) {
+      log.warn({ err, sessionId }, 'failed to set up fs.watch for Claude session detection');
+    }
+  }
+
   private attachControlMode(sessionId: string, tmuxName: string): void {
     const ctrl: ControlMode = this.mockMode
       ? new MockTmuxControlMode()
@@ -373,6 +437,13 @@ export class SessionService {
       }
     }
 
+    // Clean up fs.watch if active
+    const watcher = this.sessionWatchers.get(id);
+    if (watcher) {
+      watcher.close();
+      this.sessionWatchers.delete(id);
+    }
+
     this.multiplexers.remove(id);
     const db = getDb();
     db.prepare('DELETE FROM sessions WHERE id = ?').run(id);
@@ -436,7 +507,7 @@ export class SessionService {
         claudeResumeId: session.claudeSessionId,
       };
       this.attachPtyDirect(id, session.workspacePath, req);
-      log.info({ id }, 'reattached PTY session');
+      log.info({ id, claudeResumeId: session.claudeSessionId }, 'reattached PTY session');
       return this.get(id);
     }
 
@@ -500,7 +571,7 @@ export class SessionService {
           claudeResumeId: session.claudeSessionId,
         };
         this.attachPtyDirect(sessionId, session.workspacePath, req);
-        log.info({ id: sessionId }, 'reconnected PTY session');
+        log.info({ id: sessionId, claudeResumeId: session.claudeSessionId }, 'reconnected PTY session');
       }
       return;
     }

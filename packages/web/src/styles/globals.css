@@ -47,3 +47,19 @@
   color: var(--color-text-primary) !important;
   fill: var(--color-text-primary) !important;
 }
+.react-flow__node,
+.react-flow__node.selected,
+.react-flow__node:focus,
+.react-flow__node:focus-visible {
+  box-shadow: none !important;
+  outline: none !important;
+  border: none !important;
+}
+/* Hide NodeResizer lines by default, show only when parent has .is-resizing */
+.react-flow__resize-control.line {
+  border-color: transparent !important;
+  transition: border-color 0.15s;
+}
+.is-resizing .react-flow__resize-control.line {
+  border-color: inherit !important;
+}
