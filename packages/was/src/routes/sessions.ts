@@ -8,6 +8,7 @@ const CreateSessionSchema = z.object({
   workspacePath: z.string().min(1),
   workspaceId: z.string().optional(),
   type: z.enum(['shell', 'claude']).optional(),
+  backend: z.enum(['tmux', 'pty']).optional(),
   skipPermissions: z.boolean().optional().default(false),
   claudeArgs: z.string().optional(),
   claudeResumeId: z.string().optional(),

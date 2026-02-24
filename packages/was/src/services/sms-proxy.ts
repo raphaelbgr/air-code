@@ -48,7 +48,7 @@ export class SmsProxy {
     return this.request(`/api/sessions/${encodeURIComponent(id)}`);
   }
 
-  async createSession(body: { name: string; workspacePath: string; type?: string; skipPermissions?: boolean; claudeArgs?: string; claudeResumeId?: string }) {
+  async createSession(body: { name: string; workspacePath: string; type?: string; skipPermissions?: boolean; claudeArgs?: string; claudeResumeId?: string; backend?: string }) {
     return this.request('/api/sessions', {
       method: 'POST',
       body: JSON.stringify(body),

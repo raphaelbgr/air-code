@@ -1,6 +1,6 @@
 import { memo, useCallback, useState } from 'react';
 import { type NodeProps, NodeResizer } from '@xyflow/react';
-import { Terminal, Sparkles, Circle, Trash2, Monitor, Copy, Check, X, GitFork } from 'lucide-react';
+import { Terminal, Sparkles, Circle, Trash2, Monitor, Copy, Check, X, GitFork, RotateCcw } from 'lucide-react';
 import type { SessionNodeData } from '@/types';
 import { useSessionStore } from '@/stores/session.store';
 import { useCanvasStore } from '@/stores/canvas.store';
@@ -26,6 +26,7 @@ export const SessionNode = memo(function SessionNode({ data }: Props) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [forking, setForking] = useState(false);
+  const [reconnecting, setReconnecting] = useState(false);
   const [showJoin, setShowJoin] = useState(false);
   const [copied, setCopied] = useState<'win' | 'unix' | null>(null);
 
@@ -73,6 +74,23 @@ export const SessionNode = memo(function SessionNode({ data }: Props) {
     }
   }, [session, forking, workspaceSettings, addSession, setActiveSession]);
 
+  const handleReconnect = useCallback(async () => {
+    if (reconnecting) return;
+    setReconnecting(true);
+    try {
+      const updated = await api.sessions.reattach(session.id);
+      if (updated) {
+        addSession(updated);
+        setActiveSession(updated.id);
+      }
+    } catch (err) {
+      console.error('Reconnect failed:', err);
+    } finally {
+      setReconnecting(false);
+    }
+  }, [session.id, reconnecting, addSession, setActiveSession]);
+
+  const isPty = session.backend === 'pty';
   const isClaude = session.type === 'claude' && !!session.claudeSessionId;
   const Icon = isClaude ? Sparkles : Terminal;
   const isActive = session.status === 'running' || session.status === 'idle';
@@ -105,6 +123,11 @@ export const SessionNode = memo(function SessionNode({ data }: Props) {
       {/* Header — draggable area */}
       <div className="flex items-center gap-2 px-3 py-2 border-b border-border shrink-0">
         <Icon size={14} className="text-text-muted" />
+        {isPty && (
+          <span className="text-[9px] font-mono font-bold px-1 py-0.5 rounded bg-blue-500/20 text-blue-400 shrink-0">
+            PS
+          </span>
+        )}
         <span className="text-sm font-medium text-text-primary truncate flex-1">
           {session.name}
           {isActive && (
@@ -116,13 +139,25 @@ export const SessionNode = memo(function SessionNode({ data }: Props) {
 
         {/* Action buttons */}
         <div className="flex items-center gap-0.5 nodrag">
-          <button
-            onClick={() => setShowJoin(!showJoin)}
-            className={`p-1 rounded transition-colors ${showJoin ? 'bg-accent/20 text-accent' : 'text-text-muted hover:text-text-primary'}`}
-            title="Join locally"
-          >
-            <Monitor size={12} />
-          </button>
+          {isPty && session.status === 'stopped' && (
+            <button
+              onClick={handleReconnect}
+              disabled={reconnecting}
+              className="p-1 rounded text-blue-400 hover:text-blue-300 transition-colors disabled:opacity-50"
+              title={session.claudeSessionId ? `Reconnect: claude --resume ${session.claudeSessionId}` : 'Reconnect PowerShell'}
+            >
+              <RotateCcw size={12} />
+            </button>
+          )}
+          {!isPty && (
+            <button
+              onClick={() => setShowJoin(!showJoin)}
+              className={`p-1 rounded transition-colors ${showJoin ? 'bg-accent/20 text-accent' : 'text-text-muted hover:text-text-primary'}`}
+              title="Join locally"
+            >
+              <Monitor size={12} />
+            </button>
+          )}
           {isClaude && (
             <button
               onClick={handleFork}
@@ -167,8 +202,8 @@ export const SessionNode = memo(function SessionNode({ data }: Props) {
         />
       </div>
 
-      {/* Join locally info */}
-      {showJoin && (
+      {/* Join locally info (tmux only) */}
+      {showJoin && !isPty && (
         <div className="flex flex-col gap-1 px-2 py-1.5 bg-accent/5 border-b border-accent/20 text-[10px] shrink-0 nodrag">
           <div className="flex items-center gap-1">
             <span className="text-text-muted w-12 shrink-0">Win:</span>
@@ -199,10 +234,20 @@ export const SessionNode = memo(function SessionNode({ data }: Props) {
         {isActive ? (
           <TerminalView sessionId={session.id} isSelected={isSelected} />
         ) : (
-          <div className="absolute inset-0 flex items-center justify-center text-text-muted text-xs">
+          <div className="absolute inset-0 flex flex-col items-center justify-center text-text-muted text-xs gap-2">
             <span className="opacity-50">
               {session.status === 'stopped' ? 'Session stopped' : 'Session inactive'}
             </span>
+            {isPty && session.status === 'stopped' && (
+              <button
+                onClick={handleReconnect}
+                disabled={reconnecting}
+                className="flex items-center gap-1 px-3 py-1 rounded-md bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 transition-colors text-xs disabled:opacity-50"
+              >
+                <RotateCcw size={12} />
+                {reconnecting ? 'Reconnecting...' : 'Reconnect'}
+              </button>
+            )}
           </div>
         )}
       </div>

@@ -2,6 +2,7 @@
 
 export type SessionStatus = 'running' | 'idle' | 'stopped' | 'error';
 export type SessionType = 'shell' | 'claude';
+export type SessionBackend = 'tmux' | 'pty';
 
 export interface Session {
   id: string;
@@ -12,6 +13,7 @@ export interface Session {
   type: SessionType;
   skipPermissions: boolean;
   claudeSessionId?: string;
+  backend?: SessionBackend;
   createdAt: string;
   lastActivity: string;
 }
@@ -23,6 +25,7 @@ export interface CreateSessionRequest {
   skipPermissions?: boolean;
   claudeArgs?: string;
   claudeResumeId?: string;
+  backend?: SessionBackend;
 }
 
 export interface ClaudeSession {

@@ -95,7 +95,10 @@ export function TerminalView({ sessionId, isSelected }: TerminalViewProps) {
   }, [sessionId, isSelected, setTerminalMeta]);
 
   const handleWheel = useCallback((e: React.WheelEvent) => {
-    e.stopPropagation();
+    if (!e.ctrlKey) {
+      e.stopPropagation();
+    }
+    // When ctrlKey is held, let the event bubble up to ReactFlow for canvas zoom
   }, []);
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {

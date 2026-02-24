@@ -4,16 +4,17 @@ import { join } from 'node:path';
 import { existsSync, symlinkSync, lstatSync } from 'node:fs';
 import { v4 as uuid } from 'uuid';
 import pino from 'pino';
-import type { Session, CreateSessionRequest } from '@claude-air/shared';
+import type { Session, CreateSessionRequest, SessionBackend } from '@claude-air/shared';
 import { TMUX_SESSION_PREFIX } from '@claude-air/shared';
 import { getDb } from '../db/index.js';
 import { TmuxControlMode } from './tmux-control.service.js';
 import { MockTmuxControlMode } from './mock-tmux.service.js';
+import { PtyDirectMode } from './pty-direct.service.js';
 import { MultiplexerRegistry } from './multiplexer.service.js';
 
 const log = pino({ name: 'session' });
 
-type ControlMode = TmuxControlMode | MockTmuxControlMode;
+type ControlMode = TmuxControlMode | MockTmuxControlMode | PtyDirectMode;
 
 interface SessionRow {
   id: string;
@@ -24,6 +25,7 @@ interface SessionRow {
   type: string | null;
   skip_permissions: number;
   claude_session_id: string | null;
+  backend: string | null;
   created_at: string;
   last_activity: string;
 }
@@ -38,6 +40,7 @@ function rowToSession(row: SessionRow): Session {
     type: (row.type as Session['type']) || 'claude',
     skipPermissions: row.skip_permissions === 1,
     claudeSessionId: row.claude_session_id ?? undefined,
+    backend: (row.backend as SessionBackend) || 'tmux',
     createdAt: row.created_at,
     lastActivity: row.last_activity,
   };
@@ -167,21 +170,37 @@ export class SessionService {
   async create(req: CreateSessionRequest): Promise<Session> {
     const db = getDb();
     const id = uuid();
-    const tmuxName = `${TMUX_SESSION_PREFIX}${id.substring(0, 8)}`;
+    const backend: SessionBackend = req.backend || 'tmux';
+    const tmuxName = backend === 'pty'
+      ? `pty-${id.substring(0, 8)}`
+      : `${TMUX_SESSION_PREFIX}${id.substring(0, 8)}`;
 
+    if (backend === 'pty') {
+      // Direct PTY — native PowerShell (or bash on Linux), no tmux
+      const sessionType = req.type || 'claude';
+      db.prepare(`
+        INSERT INTO sessions (id, name, tmux_session, workspace_path, status, type, skip_permissions, claude_session_id, backend)
+        VALUES (?, ?, ?, ?, 'running', ?, ?, ?, 'pty')
+      `).run(id, req.name, tmuxName, req.workspacePath, sessionType, req.skipPermissions ? 1 : 0, null);
+
+      this.attachPtyDirect(id, req.workspacePath, req);
+
+      const row = db.prepare('SELECT * FROM sessions WHERE id = ?').get(id) as SessionRow;
+      log.info({ id, tmuxName, workspace: req.workspacePath, backend: 'pty' }, 'PTY session created');
+      return rowToSession(row);
+    }
+
+    // ── tmux backend (existing logic) ──
     if (!this.mockMode) {
-      // Real tmux
       const startDir = IS_WINDOWS ? toWslPath(req.workspacePath) : req.workspacePath;
       try {
         tryTmux('new-session', '-d', '-s', tmuxName, '-c', startDir, '-x', '80', '-y', '24');
-        // Disable tmux status bar — it wastes space especially in mini previews
         try { tryTmux('set-option', '-t', tmuxName, 'status', 'off'); } catch { /* ignore */ }
       } catch (err) {
         log.error({ err, tmuxName }, 'failed to create tmux session');
         throw new Error(`Failed to create tmux session: ${err}`);
       }
 
-      // Shell sessions: leave the bare shell prompt. Claude sessions: launch claude CLI.
       if (req.type !== 'shell') {
         let claudeCmd = 'claude';
         if (req.claudeResumeId) {
@@ -190,15 +209,9 @@ export class SessionService {
         if (req.skipPermissions) claudeCmd += ' --dangerously-skip-permissions';
         if (req.claudeArgs) claudeCmd += ` ${req.claudeArgs}`;
 
-        // On Windows, Claude CLI runs in WSL where HOME defaults to /home/<user>.
-        // Override HOME to the Windows home dir so claude --resume finds sessions
-        // at /mnt/c/Users/<user>/.claude/ instead of /home/<user>/.claude/
         if (IS_WINDOWS) {
           const wslHome = toWslPath(homedir());
           claudeCmd = `HOME="${wslHome}" ${claudeCmd}`;
-
-          // Claude Code in WSL encodes project paths differently than Windows.
-          // Create a symlink so --resume can find sessions created by native Claude.
           ensureProjectSymlink(req.workspacePath);
         }
 
@@ -209,27 +222,66 @@ export class SessionService {
           throw new Error(`Failed to start Claude Code: ${err}`);
         }
       } else {
-        // Explicitly cd to workspace — tmux's -c flag sets default-path but
-        // the login shell may reset cwd to ~ before tmux processes it.
+        const startDir2 = IS_WINDOWS ? toWslPath(req.workspacePath) : req.workspacePath;
         try {
-          tryTmux('send-keys', '-t', tmuxName, `cd "${startDir}"`, 'Enter');
-        } catch { /* non-fatal — shell still works, just in wrong dir */ }
+          tryTmux('send-keys', '-t', tmuxName, `cd "${startDir2}"`, 'Enter');
+        } catch { /* non-fatal */ }
       }
     }
 
-    // Persist in DB
     const sessionType = req.type || 'claude';
     db.prepare(`
-      INSERT INTO sessions (id, name, tmux_session, workspace_path, status, type, skip_permissions, claude_session_id)
-      VALUES (?, ?, ?, ?, 'running', ?, ?, ?)
+      INSERT INTO sessions (id, name, tmux_session, workspace_path, status, type, skip_permissions, claude_session_id, backend)
+      VALUES (?, ?, ?, ?, 'running', ?, ?, ?, 'tmux')
     `).run(id, req.name, tmuxName, req.workspacePath, sessionType, req.skipPermissions ? 1 : 0, tmuxName);
 
-    // Attach control mode (real or mock)
     this.attachControlMode(id, tmuxName);
 
     const row = db.prepare('SELECT * FROM sessions WHERE id = ?').get(id) as SessionRow;
     log.info({ id, tmuxName, workspace: req.workspacePath, mock: this.mockMode }, 'session created');
     return rowToSession(row);
+  }
+
+  /**
+   * Spawn a direct PTY (native PowerShell) and optionally launch Claude Code inside it.
+   */
+  private attachPtyDirect(sessionId: string, cwd: string, req?: CreateSessionRequest): void {
+    const ctrl = new PtyDirectMode();
+    this.controllers.set(sessionId, ctrl);
+
+    const mux = this.multiplexers.getOrCreate(sessionId);
+
+    ctrl.on('output', (_paneId: string, data: string) => {
+      mux.broadcast(data);
+      this.updateActivity(sessionId);
+    });
+
+    ctrl.on('detached', () => {
+      log.info({ sessionId }, 'direct PTY detached');
+      this.controllers.delete(sessionId);
+      this.updateStatus(sessionId, 'stopped');
+    });
+
+    ctrl.on('error', (err: Error) => {
+      log.error({ err, sessionId }, 'direct PTY error');
+    });
+
+    ctrl.attach(cwd);
+
+    // For Claude sessions, type the claude command into the shell
+    if (req && req.type !== 'shell') {
+      let claudeCmd = 'claude';
+      if (req.claudeResumeId) {
+        claudeCmd += ` --resume ${req.claudeResumeId}`;
+      }
+      if (req.skipPermissions) claudeCmd += ' --dangerously-skip-permissions';
+      if (req.claudeArgs) claudeCmd += ` ${req.claudeArgs}`;
+
+      // Small delay to let the shell prompt initialize
+      setTimeout(() => {
+        ctrl.sendKeys('', claudeCmd + '\r');
+      }, 500);
+    }
   }
 
   private attachControlMode(sessionId: string, tmuxName: string): void {
@@ -269,10 +321,18 @@ export class SessionService {
 
     return rows.map((row) => {
       const session = rowToSession(row);
-      if (!this.mockMode && (session.status === 'running' || session.status === 'idle')) {
-        if (!this.isTmuxSessionAlive(session.tmuxSession)) {
-          this.updateStatus(session.id, 'stopped');
-          session.status = 'stopped';
+      if (session.status === 'running' || session.status === 'idle') {
+        if (session.backend === 'pty') {
+          // PTY sessions: alive only if controller exists
+          if (!this.controllers.has(session.id)) {
+            this.updateStatus(session.id, 'stopped');
+            session.status = 'stopped';
+          }
+        } else if (!this.mockMode) {
+          if (!this.isTmuxSessionAlive(session.tmuxSession)) {
+            this.updateStatus(session.id, 'stopped');
+            session.status = 'stopped';
+          }
         }
       }
       return session;
@@ -290,19 +350,27 @@ export class SessionService {
     const session = this.get(id);
     if (!session) throw new Error('Session not found');
 
-    // Kill tmux FIRST so the PTY exits naturally (avoids ConPTY AttachConsole error on Windows)
-    if (!this.mockMode) {
-      try {
-        tryTmux('kill-session', '-t', session.tmuxSession);
-      } catch { /* Session may already be dead */ }
-    }
+    if (session.backend === 'pty') {
+      // Direct PTY — just kill the controller
+      const ctrl = this.controllers.get(id);
+      if (ctrl) {
+        ctrl.detach();
+        this.controllers.delete(id);
+      }
+    } else {
+      // tmux — Kill tmux FIRST so the PTY exits naturally (avoids ConPTY AttachConsole error on Windows)
+      if (!this.mockMode) {
+        try {
+          tryTmux('kill-session', '-t', session.tmuxSession);
+        } catch { /* Session may already be dead */ }
+      }
 
-    // Give PTY a moment to exit naturally before force-detaching
-    const ctrl = this.controllers.get(id);
-    if (ctrl) {
-      await new Promise((r) => setTimeout(r, 200));
-      ctrl.detach();
-      this.controllers.delete(id);
+      const ctrl = this.controllers.get(id);
+      if (ctrl) {
+        await new Promise((r) => setTimeout(r, 200));
+        ctrl.detach();
+        this.controllers.delete(id);
+      }
     }
 
     this.multiplexers.remove(id);
@@ -318,7 +386,7 @@ export class SessionService {
     const ctrl = this.controllers.get(id);
     if (ctrl?.attached) {
       await ctrl.sendKeys(session.tmuxSession, keys);
-    } else if (!this.mockMode) {
+    } else if (session.backend !== 'pty' && !this.mockMode) {
       tryTmux('send-keys', '-t', session.tmuxSession, keys);
     }
     this.updateActivity(id);
@@ -350,6 +418,27 @@ export class SessionService {
   reattach(id: string): Session | null {
     const session = this.get(id);
     if (!session) return null;
+
+    if (session.backend === 'pty') {
+      // PTY reconnect: spawn a new PTY
+      const oldCtrl = this.controllers.get(id);
+      if (oldCtrl) {
+        try { oldCtrl.detach(); } catch { /* ignore */ }
+        this.controllers.delete(id);
+      }
+
+      this.updateStatus(id, 'running');
+      const req: CreateSessionRequest = {
+        name: session.name,
+        workspacePath: session.workspacePath,
+        type: session.type,
+        skipPermissions: session.skipPermissions,
+        claudeResumeId: session.claudeSessionId,
+      };
+      this.attachPtyDirect(id, session.workspacePath, req);
+      log.info({ id }, 'reattached PTY session');
+      return this.get(id);
+    }
 
     if (this.mockMode) return session;
 
@@ -394,11 +483,30 @@ export class SessionService {
    * No-op if already attached or session is not running.
    */
   ensureAttached(sessionId: string): void {
-    if (this.mockMode) return;
     if (this.controllers.has(sessionId)) return;
 
     const session = this.get(sessionId);
     if (!session) return;
+
+    if (session.backend === 'pty') {
+      // PTY reconnect: spawn a new PTY for stopped sessions
+      if (session.status === 'stopped') {
+        this.updateStatus(sessionId, 'running');
+        const req: CreateSessionRequest = {
+          name: session.name,
+          workspacePath: session.workspacePath,
+          type: session.type,
+          skipPermissions: session.skipPermissions,
+          claudeResumeId: session.claudeSessionId,
+        };
+        this.attachPtyDirect(sessionId, session.workspacePath, req);
+        log.info({ id: sessionId }, 'reconnected PTY session');
+      }
+      return;
+    }
+
+    // tmux backend
+    if (this.mockMode) return;
     if (session.status !== 'running' && session.status !== 'idle') return;
 
     if (!this.isTmuxSessionAlive(session.tmuxSession)) {
@@ -416,6 +524,15 @@ export class SessionService {
    * - Remove DB sessions whose tmux is dead
    */
   cleanupOrphans(): void {
+    // Mark all PTY sessions as stopped — they can't survive SMS restart
+    const db0 = getDb();
+    const ptyMarked = db0.prepare(
+      `UPDATE sessions SET status = 'stopped' WHERE backend = 'pty' AND status IN ('running', 'idle')`
+    ).run();
+    if (ptyMarked.changes > 0) {
+      log.info({ count: ptyMarked.changes }, 'marked PTY sessions as stopped (SMS restart)');
+    }
+
     if (this.mockMode) return;
 
     // 1. Get all alive cca-* tmux sessions
@@ -429,9 +546,9 @@ export class SessionService {
       aliveSessions = [];
     }
 
-    // 2. Get all tracked tmux session names from DB
+    // 2. Get all tracked tmux session names from DB (tmux backend only)
     const db = getDb();
-    const dbRows = db.prepare('SELECT id, tmux_session, status FROM sessions').all() as {
+    const dbRows = db.prepare("SELECT id, tmux_session, status FROM sessions WHERE backend = 'tmux' OR backend IS NULL").all() as {
       id: string; tmux_session: string; status: string;
     }[];
     const trackedNames = new Set(dbRows.map(r => r.tmux_session));

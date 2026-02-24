@@ -2,6 +2,7 @@ import type {
   ApiResponse,
   Session,
   SessionType,
+  SessionBackend,
   Workspace,
   WorkspaceSettings,
   DetectedWorkspace,
@@ -60,7 +61,7 @@ export const api = {
   sessions: {
     list: () => request<Session[]>('/sessions'),
     get: (id: string) => request<Session>(`/sessions/${id}`),
-    create: (body: { name: string; workspacePath: string; workspaceId?: string; type?: SessionType; skipPermissions?: boolean; claudeArgs?: string; claudeResumeId?: string }) =>
+    create: (body: { name: string; workspacePath: string; workspaceId?: string; type?: SessionType; skipPermissions?: boolean; claudeArgs?: string; claudeResumeId?: string; backend?: SessionBackend }) =>
       request<Session>('/sessions', { method: 'POST', body: JSON.stringify(body) }),
     kill: (id: string) => request<void>(`/sessions/${id}`, { method: 'DELETE' }),
     rename: (id: string, name: string) =>
