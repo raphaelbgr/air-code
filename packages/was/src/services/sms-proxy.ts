@@ -81,6 +81,28 @@ export class SmsProxy {
     return this.request(`/api/sessions/${encodeURIComponent(id)}/output?lines=${lines}`);
   }
 
+  /**
+   * Upload a pasted image to SMS, bypassing the JSON request() wrapper.
+   */
+  async uploadImage(sessionId: string, buffer: Buffer, contentType: string) {
+    const url = `${this.baseUrl}/api/sessions/${encodeURIComponent(sessionId)}/paste-image`;
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': contentType },
+        body: buffer,
+      });
+      const data = await res.json() as Record<string, unknown>;
+      if (!res.ok) {
+        throw new Error((data.error as string) || `SMS returned ${res.status}`);
+      }
+      return data;
+    } catch (err) {
+      log.error({ err, sessionId }, 'SMS uploadImage failed');
+      throw err;
+    }
+  }
+
   // ── Health ──
 
   async health() {

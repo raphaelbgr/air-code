@@ -1,4 +1,4 @@
-import { Router, type Response } from 'express';
+import { Router, raw as expressRaw, type Response } from 'express';
 import { z } from 'zod';
 import { SmsProxy } from '../services/sms-proxy.js';
 import type { AuthenticatedRequest } from '../types.js';
@@ -95,6 +95,19 @@ export function createSessionRoutes(smsProxy: SmsProxy): Router {
     try {
       const lines = parseInt(req.query.lines as string, 10) || 100;
       const data = await smsProxy.captureOutput(paramId(req), lines);
+      res.json(data);
+    } catch (err) {
+      res.status(502).json({ ok: false, error: String(err) });
+    }
+  });
+
+  router.post('/:id/paste-image', expressRaw({ type: 'image/*', limit: '10mb' }), async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const data = await smsProxy.uploadImage(
+        paramId(req),
+        req.body as Buffer,
+        req.headers['content-type'] || 'image/png',
+      );
       res.json(data);
     } catch (err) {
       res.status(502).json({ ok: false, error: String(err) });

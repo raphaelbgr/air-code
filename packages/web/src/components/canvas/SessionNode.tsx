@@ -246,11 +246,16 @@ export const SessionNode = memo(function SessionNode({ data }: Props) {
           <>
             <TerminalView sessionId={session.id} isSelected={isSelected} />
             {/* Click overlay for non-selected sessions: sits above xterm.js so clicks
-                reliably activate the session instead of being consumed by xterm internals */}
+                reliably activate the session instead of being consumed by xterm internals.
+                Uses onMouseDown (not onClick) so it fires instantly before ReactFlow
+                can consume the event for node dragging/selection. */}
             {!isSelected && (
               <div
                 className="absolute inset-0 z-10 cursor-pointer"
-                onClick={() => setActiveSession(session.id)}
+                onMouseDown={(e) => {
+                  e.stopPropagation();
+                  setActiveSession(session.id);
+                }}
               />
             )}
           </>

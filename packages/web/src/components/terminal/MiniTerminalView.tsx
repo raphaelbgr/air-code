@@ -6,6 +6,7 @@ import { SearchAddon } from '@xterm/addon-search';
 import '@xterm/xterm/css/xterm.css';
 import { useTerminalStore } from '@/stores/terminal.store';
 import { terminalChannel } from '@/lib/terminal-channel';
+import { createImagePasteHandler } from '@/lib/paste-image';
 import { TERMINAL_FONT_SIZE, TERMINAL_FONT_FAMILY, TERMINAL_THEME } from './terminal-config';
 
 interface MiniTerminalViewProps {
@@ -85,10 +86,15 @@ export function MiniTerminalView({ sessionId, active }: MiniTerminalViewProps) {
     });
     resizeObserver.observe(container);
 
+    // Intercept image pastes (capture phase, before xterm sees it)
+    const pasteHandler = createImagePasteHandler(sessionId);
+    container.addEventListener('paste', pasteHandler, { capture: true });
+
     return () => {
       unsubscribe();
       removeConnectionHandler();
       resizeObserver.disconnect();
+      container.removeEventListener('paste', pasteHandler, { capture: true });
       term.dispose();
     };
   }, [sessionId, active, setTerminalMeta]);

@@ -72,6 +72,20 @@ export const api = {
       request<Session>(`/sessions/${id}/reattach`, { method: 'POST' }),
     captureOutput: (id: string, lines = 100) =>
       request<string>(`/sessions/${id}/output?lines=${lines}`),
+    uploadImage: async (id: string, blob: Blob): Promise<{ path: string }> => {
+      const token = getToken();
+      const res = await fetch(`${BASE}/sessions/${id}/paste-image`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': blob.type || 'image/png',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: blob,
+      });
+      const data = (await res.json()) as ApiResponse<{ path: string }>;
+      if (!data.ok) throw new Error(data.error || `Upload failed: ${res.status}`);
+      return data.data as { path: string };
+    },
   },
 
   // ── Workspaces ──

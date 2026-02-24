@@ -1,5 +1,9 @@
-import { Router, type Request, type Response } from 'express';
+import { Router, json as expressJson, raw as expressRaw, type Request, type Response } from 'express';
 import { z } from 'zod';
+import { tmpdir } from 'node:os';
+import { writeFileSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
+import { join } from 'node:path';
 import type { ApiResponse, Session } from '@claude-air/shared';
 import { SessionService } from '../services/session.service.js';
 
@@ -129,6 +133,33 @@ export function createSessionRoutes(sessionService: SessionService): Router {
     } catch (err) {
       res.status(404).json({ ok: false, error: String(err) } satisfies ApiResponse<never>);
     }
+  });
+
+  // Paste image — save to temp file and return path
+  router.post('/:id/paste-image', expressRaw({ type: 'image/*', limit: '10mb' }), (req: Request, res: Response) => {
+    const session = sessionService.get(paramId(req));
+    if (!session) {
+      res.status(404).json({ ok: false, error: 'Session not found' } satisfies ApiResponse<never>);
+      return;
+    }
+    const buf = req.body as Buffer;
+    if (!buf || !buf.length) {
+      res.status(400).json({ ok: false, error: 'No image data' } satisfies ApiResponse<never>);
+      return;
+    }
+    const extMap: Record<string, string> = {
+      'image/png': 'png',
+      'image/jpeg': 'jpg',
+      'image/gif': 'gif',
+      'image/webp': 'webp',
+      'image/bmp': 'bmp',
+    };
+    const ext = extMap[req.headers['content-type'] as string] ?? 'png';
+    const filename = `paste-${randomUUID().slice(0, 8)}.${ext}`;
+    const filePath = join(tmpdir(), filename);
+    writeFileSync(filePath, buf);
+    const body: ApiResponse<{ path: string }> = { ok: true, data: { path: filePath } };
+    res.json(body);
   });
 
   return router;

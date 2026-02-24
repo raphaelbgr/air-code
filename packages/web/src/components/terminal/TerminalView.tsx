@@ -3,6 +3,7 @@ import { Terminal } from '@xterm/xterm';
 import '@xterm/xterm/css/xterm.css';
 import { useTerminalStore } from '@/stores/terminal.store';
 import { terminalChannel } from '@/lib/terminal-channel';
+import { createImagePasteHandler } from '@/lib/paste-image';
 import { TERMINAL_FONT_FAMILY, TERMINAL_THEME } from './terminal-config';
 
 const TMUX_DEFAULT_COLS = 80;
@@ -171,11 +172,17 @@ export function TerminalView({ sessionId, isSelected }: TerminalViewProps) {
     terminalChannel.sendResize(sessionId, term.cols, term.rows);
     setTerminalMeta(sessionId, { cols: term.cols, rows: term.rows });
 
+    // Intercept image pastes (capture phase, before xterm sees it)
+    const container = containerRef.current;
+    const pasteHandler = createImagePasteHandler(sessionId);
+    container?.addEventListener('paste', pasteHandler, { capture: true });
+
     return () => {
       // Downgrade: disable input + cursor blink
       inputDisposable.dispose();
       term.options.cursorBlink = false;
       term.options.disableStdin = true;
+      container?.removeEventListener('paste', pasteHandler, { capture: true });
     };
   }, [sessionId, isSelected, setTerminalMeta]);
 
