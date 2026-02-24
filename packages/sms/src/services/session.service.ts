@@ -192,21 +192,25 @@ export class SessionService {
     const session = this.get(id);
     if (!session) throw new Error('Session not found');
 
-    const ctrl = this.controllers.get(id);
-    if (ctrl) {
-      ctrl.detach();
-      this.controllers.delete(id);
-    }
-
+    // Kill tmux FIRST so the PTY exits naturally (avoids ConPTY AttachConsole error on Windows)
     if (!this.mockMode) {
       try {
         tryTmux('kill-session', '-t', session.tmuxSession);
       } catch { /* Session may already be dead */ }
     }
 
+    // Give PTY a moment to exit naturally before force-detaching
+    const ctrl = this.controllers.get(id);
+    if (ctrl) {
+      await new Promise((r) => setTimeout(r, 200));
+      ctrl.detach();
+      this.controllers.delete(id);
+    }
+
     this.multiplexers.remove(id);
-    this.updateStatus(id, 'stopped');
-    log.info({ id }, 'session killed');
+    const db = getDb();
+    db.prepare('DELETE FROM sessions WHERE id = ?').run(id);
+    log.info({ id }, 'session killed and removed from DB');
   }
 
   async sendKeys(id: string, keys: string): Promise<void> {
