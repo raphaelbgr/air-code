@@ -339,7 +339,7 @@ async function scanDirectory(dir: string, existingPaths: Set<string>, depth = 0)
       lastActive: '',
       alreadyImported: existingPaths.has(normalizePath(absPath)),
     });
-    // Don't recurse into project subdirectories
+    // Don't recurse into matched subdirectories
     return detected;
   }
 

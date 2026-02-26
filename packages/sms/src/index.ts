@@ -10,6 +10,7 @@ import { MultiplexerRegistry } from './services/multiplexer.service.js';
 import { TranscriptService } from './services/transcript.service.js';
 import { createSessionRoutes } from './routes/sessions.js';
 import { createHealthRoutes } from './routes/health.js';
+import { createBrowseRoutes } from './routes/browse.js';
 import { setupTerminalWebSocket } from './ws/terminal.handler.js';
 import { registerInstance, deregisterInstance } from '@claude-air/shared/instance';
 
@@ -48,6 +49,7 @@ getDb();
 // REST routes
 app.use('/api/sessions', createSessionRoutes(sessionService));
 app.use('/api/health', createHealthRoutes(sessionService));
+app.use('/api/browse', createBrowseRoutes());
 
 // WebSocket for terminal I/O
 const wss = new WebSocketServer({ server, path: '/ws/terminal' });

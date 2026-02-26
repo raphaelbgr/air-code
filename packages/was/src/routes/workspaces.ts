@@ -76,6 +76,16 @@ function paramId(req: AuthenticatedRequest): string {
 export function createWorkspaceRoutes(smsProxy: SmsProxy): Router {
   const router = Router();
 
+  // ── Browse server filesystem ──
+  router.post('/browse', async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const result = await smsProxy.browsePath(req.body?.path);
+      res.json(result);
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) } satisfies ApiResponse<never>);
+    }
+  });
+
   // ── Detect workspaces from ~/.claude/projects/ ──
   router.get('/detect', async (req: AuthenticatedRequest, res: Response) => {
     try {

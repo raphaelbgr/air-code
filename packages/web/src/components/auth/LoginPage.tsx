@@ -26,7 +26,7 @@ export function LoginPage({ onSwitch }: { onSwitch: () => void }) {
   return (
     <div className="min-h-screen flex items-center justify-center bg-bg-primary">
       <div className="w-full max-w-sm p-8 rounded-2xl bg-bg-secondary border border-border">
-        <h1 className="text-2xl font-bold text-text-primary mb-1">Claude Code Air</h1>
+        <h1 className="text-2xl font-bold text-text-primary mb-1">Air Code</h1>
         <p className="text-text-muted text-sm mb-6">Sign in to your account</p>
 
         <form onSubmit={handleSubmit} className="space-y-4">

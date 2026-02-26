@@ -1,5 +1,5 @@
 {
-  "name": "claude-code-air",
+  "name": "air-code",
   "private": true,
   "scripts": {
     "dev": "concurrently --kill-others -n sms,was -c blue,green \"pnpm --filter @claude-air/sms dev\" \"pnpm --filter @claude-air/was dev\"",

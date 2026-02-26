@@ -1,5 +1,5 @@
 /**
- * Central date utility for Claude Code Air.
+ * Central date utility for Air Code.
  *
  * Convention:
  * - Server stores dates in UTC via SQLite `datetime('now')` → "YYYY-MM-DD HH:MM:SS"
