@@ -112,4 +112,4 @@ The PTY backend (`backend: 'pty'`) spawns native PowerShell/bash without WSL, su
 
 ## License
 
-Private
+[MIT](LICENSE)
