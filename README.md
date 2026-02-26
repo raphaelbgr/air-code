@@ -2,6 +2,8 @@
 
 A web-based canvas for managing multiple Claude Code terminal sessions. Organize sessions into workspaces, view live terminal output, fork conversations, and collaborate with multi-user presence.
 
+![Air Code Screenshot](docs/screenshot.png)
+
 ## Features
 
 - **Canvas-based session management** — Drag, resize, and organize session cards within workspace bubbles
