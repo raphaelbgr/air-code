@@ -1,8 +1,10 @@
-# Architecture & Data Flow
+# Architecture & Data Flow (v0.1.0)
 
 ## System Overview
 
-Claude Code Air is a monorepo with 4 packages that together provide a web-based canvas for managing Claude Code terminal sessions.
+Air Code is a monorepo with 4 packages that together provide a web-based canvas for managing Claude Code terminal sessions.
+
+> Version is defined in `packages/shared/src/constants.ts` (`VERSION`) and exposed via `/api/health`.
 
 ```
 ┌──────────────────────────────────────────────────────────────┐

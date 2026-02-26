@@ -9,6 +9,8 @@ import type {
   ClaudeSession,
   AuthResponse,
   CanvasState,
+  HealthResponse,
+  BrowseResult,
 } from '@claude-air/shared';
 
 const BASE = '/api';
@@ -70,6 +72,11 @@ export const api = {
       request<void>(`/sessions/${id}/send`, { method: 'POST', body: JSON.stringify({ keys }) }),
     reattach: (id: string) =>
       request<Session>(`/sessions/${id}/reattach`, { method: 'POST' }),
+    reopen: (id: string, body?: { claudeArgs?: string }) =>
+      request<Session>(`/sessions/${id}/reopen`, {
+        method: 'POST',
+        body: JSON.stringify(body || {}),
+      }),
     captureOutput: (id: string, lines = 100) =>
       request<string>(`/sessions/${id}/output?lines=${lines}`),
     uploadImage: async (id: string, blob: Blob): Promise<{ path: string }> => {
@@ -96,8 +103,17 @@ export const api = {
     update: (id: string, body: { name: string; description?: string; color?: string }) =>
       request<Workspace>(`/workspaces/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
     delete: (id: string) => request<void>(`/workspaces/${id}`, { method: 'DELETE' }),
-    detect: (scanDir?: string) =>
-      request<DetectedWorkspace[]>(`/workspaces/detect${scanDir ? `?scanDir=${encodeURIComponent(scanDir)}` : ''}`),
+    detect: (scanDir?: string) => {
+      const params = new URLSearchParams();
+      if (scanDir) params.set('scanDir', scanDir);
+      const qs = params.toString();
+      return request<DetectedWorkspace[]>(`/workspaces/detect${qs ? `?${qs}` : ''}`);
+    },
+    browse: (path?: string) =>
+      request<BrowseResult>('/workspaces/browse', {
+        method: 'POST',
+        body: JSON.stringify({ path }),
+      }),
     import: (workspaces: { path: string; name: string; color?: string }[]) =>
       request<Workspace[]>('/workspaces/import', {
         method: 'POST',
@@ -117,5 +133,14 @@ export const api = {
     get: () => request<CanvasState>('/canvas'),
     save: (state: CanvasState) =>
       request<void>('/canvas', { method: 'PUT', body: JSON.stringify(state) }),
+  },
+
+  // ── Health ──
+  health: async (): Promise<HealthResponse> => {
+    const token = getToken();
+    const res = await fetch(`${BASE}/health`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    return (await res.json()) as HealthResponse;
   },
 };

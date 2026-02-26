@@ -77,6 +77,13 @@ export class SmsProxy {
     return this.request(`/api/sessions/${encodeURIComponent(id)}/reattach`, { method: 'POST' });
   }
 
+  async reopenSession(id: string, body?: { claudeArgs?: string }) {
+    return this.request(`/api/sessions/${encodeURIComponent(id)}/reopen`, {
+      method: 'POST',
+      body: JSON.stringify(body || {}),
+    });
+  }
+
   async captureOutput(id: string, lines = 100) {
     return this.request(`/api/sessions/${encodeURIComponent(id)}/output?lines=${lines}`);
   }
@@ -101,6 +108,15 @@ export class SmsProxy {
       log.error({ err, sessionId }, 'SMS uploadImage failed');
       throw err;
     }
+  }
+
+  // ── Browse ──
+
+  async browsePath(dirPath?: string) {
+    return this.request('/api/browse', {
+      method: 'POST',
+      body: JSON.stringify({ path: dirPath }),
+    });
   }
 
   // ── Health ──

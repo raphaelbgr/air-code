@@ -171,6 +171,20 @@ export interface AgentChatRequest {
   conversationId?: string;
 }
 
+// ── Browse types ──
+
+export interface BrowseItem {
+  name: string;
+  isDir: boolean;
+  description?: string;
+}
+
+export interface BrowseResult {
+  path: string;
+  parent: string | null;
+  items: BrowseItem[];
+}
+
 // ── API response wrapper ──
 
 export interface ApiResponse<T> {
@@ -185,4 +199,6 @@ export interface HealthResponse {
   status: 'ok' | 'degraded' | 'error';
   version: string;
   uptime: number;
+  os?: string;
+  hostname?: string;
 }

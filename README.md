@@ -1,4 +1,4 @@
-# Claude Code Air
+# Air Code v0.1.0
 
 A web-based canvas for managing multiple Claude Code terminal sessions. Organize sessions into workspaces, view live terminal output, fork conversations, and collaborate with multi-user presence.
 

@@ -664,23 +664,117 @@ export class SessionService {
       }
     }
 
-    // 4. Remove DB sessions whose tmux is dead
+    // 4. Mark DB sessions whose tmux is dead as stopped (preserves metadata for reopen)
     const aliveSet = new Set(aliveSessions);
-    let removed = 0;
+    let stopped = 0;
     for (const row of dbRows) {
-      if (!aliveSet.has(row.tmux_session)) {
-        db.prepare('DELETE FROM sessions WHERE id = ?').run(row.id);
-        removed++;
-        log.info({ id: row.id, tmux: row.tmux_session }, 'removed dead session from DB');
+      if (!aliveSet.has(row.tmux_session) && row.status !== 'stopped') {
+        db.prepare("UPDATE sessions SET status = 'stopped' WHERE id = ?").run(row.id);
+        stopped++;
+        log.info({ id: row.id, tmux: row.tmux_session }, 'marked dead tmux session as stopped');
       }
     }
 
     // 5. Strip "(recovered)" suffix from session names (legacy cleanup)
     db.prepare(`UPDATE sessions SET name = REPLACE(name, ' (recovered)', '') WHERE name LIKE '% (recovered)'`).run();
 
-    if (adopted > 0 || removed > 0) {
-      log.info({ adopted, removed }, 'session reconciliation complete');
+    if (adopted > 0 || stopped > 0) {
+      log.info({ adopted, stopped }, 'session reconciliation complete');
     }
+  }
+
+  /**
+   * Reopen a stopped session by creating a fresh tmux/PTY process
+   * using the original session metadata. Reuses the same DB row ID
+   * so the canvas node stays in place.
+   */
+  async reopen(id: string, claudeArgs?: string): Promise<Session> {
+    const db = getDb();
+    const row = db.prepare('SELECT * FROM sessions WHERE id = ?').get(id) as SessionRow | undefined;
+    if (!row) throw new Error('Session not found');
+    if (row.status !== 'stopped') throw new Error('Session is not stopped');
+
+    const session = rowToSession(row);
+    const backend = session.backend || 'tmux';
+    const cwd = session.workspacePath;
+
+    if (backend === 'pty') {
+      // PTY backend — spawn a new PTY process
+      const newPtyName = `pty-${uuid().substring(0, 8)}`;
+      const req: CreateSessionRequest = {
+        name: session.name,
+        workspacePath: cwd,
+        type: session.type,
+        skipPermissions: session.skipPermissions,
+        claudeResumeId: session.claudeSessionId,
+        claudeArgs,
+      };
+      this.attachPtyDirect(id, cwd, req);
+
+      db.prepare(
+        "UPDATE sessions SET tmux_session = ?, status = 'running', last_activity = datetime('now') WHERE id = ?"
+      ).run(newPtyName, id);
+
+      if (session.type === 'claude') {
+        this.watchForClaudeSession(id, cwd);
+      }
+
+      log.info({ id, backend: 'pty', claudeResumeId: session.claudeSessionId }, 'reopened PTY session');
+      return this.get(id)!;
+    }
+
+    // tmux backend — create a new tmux session
+    if (this.mockMode) throw new Error('Cannot reopen in mock mode');
+
+    const newTmuxName = `${TMUX_SESSION_PREFIX}${uuid().substring(0, 8)}`;
+    const startDir = IS_WINDOWS ? toWslPath(cwd) : cwd;
+
+    try {
+      tryTmux('new-session', '-d', '-s', newTmuxName, '-c', startDir, '-x', '80', '-y', '24');
+      try { tryTmux('set-option', '-t', newTmuxName, 'status', 'off'); } catch { /* ignore */ }
+    } catch (err) {
+      throw new Error(`Failed to create tmux session: ${err}`);
+    }
+
+    if (session.type !== 'shell') {
+      let claudeCmd = 'claude';
+      if (session.claudeSessionId) {
+        claudeCmd += ` --resume ${session.claudeSessionId}`;
+      }
+      if (session.skipPermissions) claudeCmd += ' --dangerously-skip-permissions';
+      if (claudeArgs) claudeCmd += ` ${claudeArgs}`;
+
+      if (IS_WINDOWS) {
+        const wslHome = toWslPath(homedir());
+        claudeCmd = `HOME="${wslHome}" ${claudeCmd}`;
+        ensureProjectSymlink(cwd);
+      }
+
+      try {
+        tryTmux('send-keys', '-t', newTmuxName, claudeCmd, 'Enter');
+      } catch (err) {
+        try { tryTmux('kill-session', '-t', newTmuxName); } catch { /* ignore */ }
+        throw new Error(`Failed to start Claude Code: ${err}`);
+      }
+    } else {
+      const shellDir = IS_WINDOWS ? toWslPath(cwd) : cwd;
+      try {
+        tryTmux('send-keys', '-t', newTmuxName, `cd "${shellDir}"`, 'Enter');
+      } catch { /* non-fatal */ }
+    }
+
+    db.prepare(
+      "UPDATE sessions SET tmux_session = ?, status = 'running', last_activity = datetime('now') WHERE id = ?"
+    ).run(newTmuxName, id);
+
+    this.attachControlMode(id, newTmuxName);
+
+    if (session.type === 'claude') {
+      this.watchForClaudeSession(id, cwd);
+    }
+
+    log.info({ id, tmuxName: newTmuxName, claudeResumeId: session.claudeSessionId }, 'reopened tmux session');
+    return this.get(id)!;
   }
 
   getController(id: string): ControlMode | undefined {

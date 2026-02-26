@@ -77,6 +77,15 @@ export function createSessionRoutes(smsProxy: SmsProxy): Router {
     }
   });
 
+  router.post('/:id/reopen', async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const data = await smsProxy.reopenSession(paramId(req), req.body);
+      res.json(data);
+    } catch (err) {
+      res.status(502).json({ ok: false, error: String(err) });
+    }
+  });
+
   router.post('/:id/send', async (req: AuthenticatedRequest, res: Response) => {
     const parsed = SendKeysSchema.safeParse(req.body);
     if (!parsed.success) {

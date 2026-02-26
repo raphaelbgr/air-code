@@ -26,7 +26,7 @@ export const SessionNode = memo(function SessionNode({ data }: Props) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [forking, setForking] = useState(false);
-  const [reconnecting, setReconnecting] = useState(false);
+  const [reopening, setReopening] = useState(false);
   const [showJoin, setShowJoin] = useState(false);
   const [copied, setCopied] = useState<'win' | 'unix' | null>(null);
   const [resizing, setResizing] = useState(false);
@@ -77,21 +77,23 @@ export const SessionNode = memo(function SessionNode({ data }: Props) {
     }
   }, [session, forking, workspaceSettings, addSession, setActiveSession]);
 
-  const handleReconnect = useCallback(async () => {
-    if (reconnecting) return;
-    setReconnecting(true);
+  const handleReopen = useCallback(async () => {
+    if (reopening) return;
+    setReopening(true);
     try {
-      const updated = await api.sessions.reattach(session.id);
+      const updated = await api.sessions.reopen(session.id, {
+        claudeArgs: workspaceSettings?.claudeArgs,
+      });
       if (updated) {
         addSession(updated);
         setActiveSession(updated.id);
       }
     } catch (err) {
-      console.error('Reconnect failed:', err);
+      console.error('Reopen failed:', err);
     } finally {
-      setReconnecting(false);
+      setReopening(false);
     }
-  }, [session.id, reconnecting, addSession, setActiveSession]);
+  }, [session.id, reopening, workspaceSettings, addSession, setActiveSession]);
 
   const isPty = session.backend === 'pty';
   const isClaude = session.type === 'claude' && !!session.claudeSessionId;
@@ -135,9 +137,13 @@ export const SessionNode = memo(function SessionNode({ data }: Props) {
       {/* Header — draggable area */}
       <div className="flex items-center gap-2 px-3 py-2 border-b border-border shrink-0">
         <Icon size={14} className="text-text-muted" />
-        {isPty && (
+        {isPty ? (
           <span className="text-[9px] font-mono font-bold px-1 py-0.5 rounded bg-blue-500/20 text-blue-400 shrink-0">
             PS
+          </span>
+        ) : (
+          <span className="text-[9px] font-mono font-bold px-1 py-0.5 rounded bg-green-500/20 text-green-400 shrink-0">
+            tmux
           </span>
         )}
         <span className="text-sm font-medium text-text-primary truncate flex-1">
@@ -151,12 +157,12 @@ export const SessionNode = memo(function SessionNode({ data }: Props) {
 
         {/* Action buttons */}
         <div className="flex items-center gap-0.5 nodrag">
-          {isPty && session.status === 'stopped' && (
+          {session.status === 'stopped' && (
             <button
-              onClick={handleReconnect}
-              disabled={reconnecting}
+              onClick={handleReopen}
+              disabled={reopening}
               className="p-1 rounded text-blue-400 hover:text-blue-300 transition-colors disabled:opacity-50"
-              title={session.claudeSessionId ? `Reconnect: claude --resume ${session.claudeSessionId}` : 'Reconnect PowerShell'}
+              title={session.claudeSessionId ? `Reopen: claude --resume ${session.claudeSessionId}` : 'Reopen terminal'}
             >
               <RotateCcw size={12} />
             </button>
@@ -264,14 +270,14 @@ export const SessionNode = memo(function SessionNode({ data }: Props) {
             <span className="opacity-50">
               {session.status === 'stopped' ? 'Session stopped' : 'Session inactive'}
             </span>
-            {isPty && session.status === 'stopped' && (
+            {session.status === 'stopped' && (
               <button
-                onClick={handleReconnect}
-                disabled={reconnecting}
+                onClick={handleReopen}
+                disabled={reopening}
                 className="flex items-center gap-1 px-3 py-1 rounded-md bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 transition-colors text-xs disabled:opacity-50"
               >
                 <RotateCcw size={12} />
-                {reconnecting ? 'Reconnecting...' : 'Reconnect'}
+                {reopening ? 'Reopening...' : 'Reopen'}
               </button>
             )}
           </div>

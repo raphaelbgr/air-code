@@ -14,6 +14,7 @@ import { useCanvasSync } from '@/hooks/useCanvasSync';
 import { useAuthStore } from '@/stores/auth.store';
 import { useAgentStore } from '@/stores/agent.store';
 import { terminalChannel } from '@/lib/terminal-channel';
+import { api } from '@/lib/api';
 import { useCanvasStore } from '@/stores/canvas.store';
 import { useSessionStore } from '@/stores/session.store';
 import { LogOut, User } from 'lucide-react';
@@ -119,10 +120,32 @@ export function AppLayout() {
 }
 
 function TopBar({ user, onLogout }: { user: { displayName: string } | null; onLogout: () => void }) {
+  const [osLabel, setOsLabel] = useState<string | null>(null);
+  const [version, setVersion] = useState<string | null>(null);
+  const [hostName, setHostName] = useState<string | null>(null);
+
+  useEffect(() => {
+    api.health().then((h) => {
+      if (h.os) setOsLabel(h.os);
+      if (h.version) setVersion(h.version);
+      if (h.hostname) setHostName(h.hostname);
+    }).catch(() => {});
+  }, []);
+
+  const apiUrl = window.location.origin;
+
   return (
     <div className="h-10 flex items-center justify-between px-4 border-b border-border bg-bg-secondary shrink-0">
       <div className="flex items-center gap-2">
-        <span className="text-accent font-bold text-sm">Claude Code Air</span>
+        <span className="text-accent font-bold text-sm">Air Code</span>
+        {version && (
+          <span className="text-[10px] font-mono text-text-muted">
+            v{version}
+          </span>
+        )}
+        <span className="text-[10px] font-mono text-text-muted px-1.5 py-0.5 rounded bg-bg-tertiary">
+          {[hostName, osLabel, apiUrl].filter(Boolean).join(' · ')}
+        </span>
       </div>
       <div className="flex items-center gap-3">
         <SaveStatusIcon />

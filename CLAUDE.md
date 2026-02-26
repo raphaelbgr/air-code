@@ -1,4 +1,9 @@
-# Claude Code Air — Project Rules
+# Air Code — Project Rules (v0.1.0)
+
+## Version
+
+- Current version: `0.1.0` — defined in `packages/shared/src/constants.ts` (`VERSION`)
+- This is the single source of truth; all servers and the frontend read from it
 
 ## Database Safety
 

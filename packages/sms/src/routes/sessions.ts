@@ -25,6 +25,10 @@ const RenameSchema = z.object({
   name: z.string().min(1).max(100),
 });
 
+const ReopenSchema = z.object({
+  claudeArgs: z.string().optional(),
+});
+
 function paramId(req: Request): string {
   const id = req.params.id;
   return Array.isArray(id) ? id[0] : id;
@@ -101,6 +105,22 @@ export function createSessionRoutes(sessionService: SessionService): Router {
         res.status(404).json({ ok: false, error: 'Session not found' } satisfies ApiResponse<never>);
         return;
       }
+      const body: ApiResponse<Session> = { ok: true, data: session };
+      res.json(body);
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) } satisfies ApiResponse<never>);
+    }
+  });
+
+  // Reopen a stopped session (creates fresh tmux/PTY with original metadata)
+  router.post('/:id/reopen', async (req: Request, res: Response) => {
+    const parsed = ReopenSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ ok: false, error: parsed.error.message } satisfies ApiResponse<never>);
+      return;
+    }
+    try {
+      const session = await sessionService.reopen(paramId(req), parsed.data.claudeArgs);
       const body: ApiResponse<Session> = { ok: true, data: session };
       res.json(body);
     } catch (err) {

@@ -10,15 +10,21 @@ export function createHealthRoutes(smsProxy: SmsProxy): Router {
 
   router.get('/', async (_req: Request, res: Response) => {
     let smsOk = false;
+    let smsOs: string | undefined;
+    let smsHostname: string | undefined;
     try {
-      await smsProxy.health();
+      const smsHealth = await smsProxy.health() as HealthResponse;
       smsOk = true;
+      smsOs = smsHealth.os;
+      smsHostname = smsHealth.hostname;
     } catch { /* SMS unreachable */ }
 
     const response: HealthResponse = {
       status: smsOk ? 'ok' : 'degraded',
       version: VERSION,
       uptime: Math.floor((Date.now() - startTime) / 1000),
+      os: smsOs,
+      hostname: smsHostname,
     };
     res.json(response);
   });
