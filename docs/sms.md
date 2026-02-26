@@ -45,7 +45,8 @@ Main orchestrator for session lifecycle.
 | `reattach(id)` | Reconnect to session after network disconnect |
 | `reattachAll()` | Lazy-load preparation (called on startup) |
 | `ensureAttached(id)` | Trigger actual PTY spawning on first client |
-| `cleanupOrphans()` | Reconcile tmux/DB state on startup |
+| `reopen(id, claudeArgs?)` | Reopen stopped session with fresh tmux/PTY (same DB row) |
+| `cleanupOrphans()` | Mark dead sessions as stopped, adopt orphan tmux on startup |
 
 ### TmuxControlMode (`src/services/tmux-control.service.ts`)
 
@@ -106,8 +107,16 @@ Base path: `/api/sessions`
 | `/:id` | DELETE | Kill session |
 | `/:id` | PUT | Rename session |
 | `/:id/reattach` | POST | Reconnect to session |
+| `/:id/reopen` | POST | Reopen stopped session with fresh process (`{ claudeArgs? }`) |
 | `/:id/send` | POST | Send keyboard input (`{ keys }`) |
 | `/:id/output` | GET | Capture scrollback (`?lines=100`) |
+| `/:id/paste-image` | POST | Upload pasted image, returns `{ path }` |
+
+Base path: `/api/browse`
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/` | POST | Browse server filesystem (`{ path? }`) |
 
 ### Create Session Request
 
@@ -173,13 +182,15 @@ CREATE TABLE transcripts (
 ## Health Endpoint
 
 ```
-GET /api/health → { status: "ok"|"degraded", version, uptime, mock }
+GET /api/health → { status: "ok"|"degraded", version, uptime, mock, os, hostname }
 ```
+
+Returns OS label (e.g. "Windows 11") and machine hostname (e.g. "WINDOWS-DESKTOP").
 
 ## Startup & Reconciliation
 
 1. `getDb()` — Create database, enable WAL + foreign keys, run migrations
-2. `cleanupOrphans()` — Mark PTY sessions as stopped, reconcile tmux state
+2. `cleanupOrphans()` — Mark PTY sessions as stopped, mark dead tmux sessions as stopped (preserving metadata for reopen), adopt orphan tmux sessions
 3. `reattachAll()` — Prepare sessions for lazy PTY loading (no spawn yet)
 4. `ensureAttached()` — Called by first WebSocket client → spawns actual PTY
 

@@ -4,7 +4,7 @@
 
 ## Overview
 
-WAS is the central API hub for Claude Air. It handles authentication, serves the React frontend, proxies session management to SMS, manages workspaces, persists canvas layout, tracks user presence, and provides an AI agent interface.
+WAS is the central API hub for Air Code. It handles authentication, serves the React frontend, proxies session management to SMS, manages workspaces, persists canvas layout, tracks user presence, and provides an AI agent interface.
 
 ## Core Responsibilities
 
@@ -63,13 +63,16 @@ Returns `{ token, user }`.
 | `/` | POST | Create session |
 | `/:id` | DELETE | Kill session |
 | `/:id/reattach` | POST | Reconnect to session |
+| `/:id/reopen` | POST | Reopen stopped session with fresh process |
 | `/:id/send` | POST | Send keystrokes |
 | `/:id/output` | GET | Capture terminal output |
+| `/:id/paste-image` | POST | Upload pasted image |
 
 ### Workspaces (`/api/workspaces`) — Protected
 
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
+| `/browse` | POST | Browse server filesystem (`{ path? }`) |
 | `/detect` | GET | Auto-detect workspaces from `~/.claude/projects/` |
 | `/import` | POST | Bulk import detected workspaces |
 | `/` | GET | List all workspaces with session stats |
@@ -97,7 +100,7 @@ Available agent tools: `list_sessions`, `get_session_status`, `create_session`, 
 
 ### Health (`/api/health`) — Public
 
-Returns `{ status: "ok"|"degraded", version, uptime }`. Status is "degraded" if SMS is unreachable.
+Returns `{ status: "ok"|"degraded", version, uptime, os?, hostname? }`. Status is "degraded" if SMS is unreachable. Forwards `os` and `hostname` from SMS health response.
 
 ## Database Schema
 
@@ -164,6 +167,9 @@ Socket.IO for real-time user awareness. Events: `PRESENCE_JOIN`, `PRESENCE_LEAVE
 
 ### SmsProxy
 - HTTP client proxying all session requests to SMS
+- `reopenSession(id, body?)` — proxy to SMS reopen endpoint
+- `browsePath(path?)` — proxy to SMS browse endpoint
+- `uploadImage(sessionId, buffer, contentType)` — proxy paste image
 - `getTerminalWsUrl(sessionId)` for WebSocket upgrade
 
 ### CanvasService

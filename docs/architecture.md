@@ -108,6 +108,27 @@ Browser → DELETE /api/sessions/:id → WAS → SMS
   └─ DELETE FROM sessions
 ```
 
+### Reopen (after restart)
+
+```
+Browser → POST /api/sessions/:id/reopen → WAS → SMS
+  ├─ Verify session exists and status = 'stopped'
+  ├─ Generate new tmux/pty name
+  │
+  ├─ tmux backend:
+  │   ├─ wsl tmux new-session -s cca-<new-id> -c <workspace>
+  │   ├─ claude --resume <claudeSessionId> [--dangerously-skip-permissions]
+  │   └─ Attach TmuxControlMode
+  │
+  └─ PTY backend:
+      ├─ Spawn PtyDirectMode
+      └─ Type claude --resume <claudeSessionId>
+  │
+  ├─ UPDATE sessions SET tmux_session=<new>, status='running'
+  ├─ watchForClaudeSession() if Claude type
+  └─ Return same session ID (canvas position preserved)
+```
+
 ## WebSocket Strategies
 
 ### Per-Client Proxy (`/ws/terminal`)
@@ -216,7 +237,7 @@ pnpm dev
   ├─ SMS (:7331)
   │   ├─ getDb() → create tables, enable WAL
   │   ├─ checkTmux() → validate availability
-  │   ├─ cleanupOrphans() → reconcile tmux/DB
+  │   ├─ cleanupOrphans() → mark dead sessions as stopped, adopt orphan tmux
   │   ├─ reattachAll() → prepare lazy loading
   │   ├─ Listen on :7331
   │   └─ registerInstance('sms', 7331)

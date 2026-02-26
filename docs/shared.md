@@ -169,7 +169,23 @@ interface AgentToolCall {
 }
 
 interface ApiResponse<T> { ok: boolean; data?: T; error?: string }
-interface HealthResponse { status: 'ok' | 'degraded' | 'error'; version: string; uptime: number }
+interface HealthResponse { status: 'ok' | 'degraded' | 'error'; version: string; uptime: number; os?: string; hostname?: string }
+```
+
+### Browse Types
+
+```typescript
+interface BrowseItem {
+  name: string
+  isDir: boolean
+  description?: string
+}
+
+interface BrowseResult {
+  path: string
+  parent: string | null
+  items: BrowseItem[]
+}
 ```
 
 ## Constants (`src/constants.ts`)

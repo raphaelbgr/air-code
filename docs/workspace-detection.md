@@ -2,7 +2,7 @@
 
 ## Overview
 
-Claude Air TMUX discovers workspaces from Claude Code's local project data, imports them into the canvas, and provides session counts and quick-launch buttons.
+Air Code discovers workspaces from Claude Code's local project data or by browsing the server filesystem, imports them into the canvas, and provides session counts and quick-launch buttons.
 
 ## ~/.claude/projects/ Structure
 
@@ -78,6 +78,15 @@ This is done by calling `getClaudeStatsMap()` which builds a `Map<path, stats>` 
 3. WAS proxies to SMS which creates a tmux session running `claude` in the workspace directory
 4. The new session appears inside the workspace bubble on the canvas
 5. User can click the session node to open the terminal panel
+
+## Folder Browser
+
+The "Add Workspace" dialog also provides a folder browser for directly importing any directory:
+
+1. `POST /api/workspaces/browse` returns `BrowseResult` with subdirectories
+2. Breadcrumb navigation with drive root ("This PC") and home shortcuts
+3. "Add as Workspace" button imports the currently browsed directory
+4. Supports Windows drive listing via `__drives__` special path
 
 ## Session-Workspace Mapping
 

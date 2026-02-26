@@ -20,7 +20,7 @@ Individual session card (ReactFlow node):
 - **Header:** Session name, status dot (green/orange/gray/red), action buttons
 - **Terminal preview:** Live xterm output or "Session stopped" message
 - **Footer:** Workspace folder name, viewer avatars
-- **Actions:** Reconnect, Fork (Claude sessions), Kill, Copy tmux attach command, Join locally
+- **Actions:** Reopen (all stopped sessions), Fork (Claude sessions), Kill, Copy tmux attach command, Join locally
 - **Presence:** Colored borders show which users are viewing the session
 
 #### WorkspaceBubble.tsx
@@ -59,13 +59,13 @@ Dark theme (#0a0a0f background), indigo cursor (#818cf8).
 ### Dialogs (`src/components/dialogs/`)
 - **CreateSessionDialog** — Manual session creation
 - **CreateWorkspaceDialog** — Create or import workspaces
-- **DetectWorkspacesDialog** — Auto-scan directory, import git repos
+- **DetectWorkspacesDialog** — Folder browser with breadcrumb navigation + auto-detect Claude projects
 - **WorkspaceSettingsDialog** — Edit workspace settings, Claude args
 - **ClaudeLauncherDialog** — Launch Claude Code with resume/fork options
 
 ### Layout (`src/components/`)
 - **AppLayout.tsx** — Top-level layout, initializes WebSocket/Socket.IO/canvas sync
-- **TopBar** — User display, logout, save status icon
+- **TopBar** — Version badge (v0.1.0), hostname, OS, connected URL, user display, logout, save status icon
 - Mobile variants: MobileListView, MobileTerminal, MobileFAB
 
 ## State Management (Zustand)
@@ -120,11 +120,14 @@ api.sessions.create({ name, workspacePath, type?, backend?, skipPermissions?, cl
 api.sessions.kill(id)
 api.sessions.sendKeys(id, keys)
 api.sessions.reattach(id)
+api.sessions.reopen(id, { claudeArgs? })
 api.sessions.captureOutput(id, lines?)
+api.sessions.uploadImage(id, blob)
 
 api.workspaces.list()
 api.workspaces.create({ name, description?, color? })
-api.workspaces.detect(scanDir?)
+api.workspaces.detect()
+api.workspaces.browse(path?)
 api.workspaces.import(workspaces[])
 api.workspaces.updateSettings(id, settings)
 api.workspaces.claudeSessions(id)
