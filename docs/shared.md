@@ -1,6 +1,6 @@
 # Shared — Types, Constants & Utilities
 
-**Package:** `@claude-air/shared` | **Entry:** `src/index.ts`
+**Package:** `@air-code/shared` | **Entry:** `src/index.ts`
 
 ## Overview
 
@@ -17,8 +17,8 @@ Dual export paths to separate browser-safe code from Node.js-only code:
 }
 ```
 
-- `import { ... } from '@claude-air/shared'` — Types, constants, dates (browser-safe)
-- `import { ... } from '@claude-air/shared/instance'` — Instance registration (Node.js only)
+- `import { ... } from '@air-code/shared'` — Types, constants, dates (browser-safe)
+- `import { ... } from '@air-code/shared/instance'` — Instance registration (Node.js only)
 
 The barrel `index.ts` intentionally does NOT export `instance.ts` to prevent Vite from bundling `node:fs` and `node:path` into the browser build.
 
@@ -28,7 +28,7 @@ The barrel `index.ts` intentionally does NOT export `instance.ts` to prevent Vit
 
 ```typescript
 type SessionStatus = 'running' | 'idle' | 'stopped' | 'error'
-type SessionType = 'shell' | 'claude'
+type SessionType = 'shell' | 'cli'
 type SessionBackend = 'tmux' | 'pty'
 
 interface Session {
@@ -39,7 +39,7 @@ interface Session {
   status: SessionStatus
   type: SessionType
   skipPermissions: boolean
-  claudeSessionId?: string
+  cliSessionId?: string
   backend?: SessionBackend
   createdAt: string
   lastActivity: string
@@ -50,13 +50,13 @@ interface CreateSessionRequest {
   workspacePath: string
   type?: SessionType
   skipPermissions?: boolean
-  claudeArgs?: string
-  claudeResumeId?: string
+  cliArgs?: string
+  cliResumeId?: string
   forkSession?: boolean
   backend?: SessionBackend
 }
 
-interface ClaudeSession {
+interface CliSession {
   sessionId: string
   summary: string
   messageCount: number
@@ -71,7 +71,7 @@ interface ClaudeSession {
 ```typescript
 interface WorkspaceSettings {
   skipPermissions?: boolean
-  claudeArgs?: string
+  cliArgs?: string
 }
 
 interface Workspace {
@@ -83,8 +83,8 @@ interface Workspace {
   settings?: WorkspaceSettings
   createdBy?: string
   createdAt: string
-  claudeSessionCount?: number
-  claudeLastActive?: string
+  cliSessionCount?: number
+  cliLastActive?: string
 }
 
 interface DetectedWorkspace {

@@ -1,12 +1,12 @@
-# Workspace Detection & Claude Code Integration
+# Workspace Detection & AI CLI Integration
 
 ## Overview
 
-Air Code discovers workspaces from Claude Code's local project data or by browsing the server filesystem, imports them into the canvas, and provides session counts and quick-launch buttons.
+Air Code discovers workspaces from AI CLI's local project data or by browsing the server filesystem, imports them into the canvas, and provides session counts and quick-launch buttons.
 
 ## ~/.claude/projects/ Structure
 
-Claude Code stores project session data in `~/.claude/projects/`. Each project folder is named using an encoded version of the filesystem path:
+AI CLI stores project session data in `~/.claude/projects/`. Each project folder is named using an encoded version of the filesystem path:
 
 ```
 ~/.claude/projects/
@@ -14,7 +14,7 @@ Claude Code stores project session data in `~/.claude/projects/`. Each project f
     sessions-index.json
     memory/
     <session-uuid>.jsonl
-  C--Users-rbgnr-git-claude-air-tmux/
+  C--Users-rbgnr-git-air-code/
     sessions-index.json
     ...
 ```
@@ -52,7 +52,7 @@ Rules:
 Key fields:
 - `entries[].projectPath` — the original filesystem path (used for matching)
 - `entries[].modified` — used to determine "last active" time
-- `entries.length` — the Claude Code session (chat) count
+- `entries.length` — the AI CLI session (chat) count
 
 ## Workspace Detection Flow
 
@@ -63,15 +63,15 @@ Key fields:
 5. The user selects workspaces to import via the Detect Workspaces dialog
 6. `POST /api/workspaces/import` saves them to the database
 
-## Claude Code Session Stats
+## AI CLI Session Stats
 
 The `GET /api/workspaces` list endpoint enriches each workspace with:
-- `claudeSessionCount` — number of historical Claude Code conversations
-- `claudeLastActive` — ISO timestamp of the most recent conversation
+- `cliSessionCount` — number of historical AI CLI conversations
+- `cliLastActive` — ISO timestamp of the most recent conversation
 
-This is done by calling `getClaudeStatsMap()` which builds a `Map<path, stats>` from all `sessions-index.json` files, then merging the stats into each workspace that has a matching `path`.
+This is done by calling `getCliStatsMap()` which builds a `Map<path, stats>` from all `sessions-index.json` files, then merging the stats into each workspace that has a matching `path`.
 
-## "Open Claude Code" Flow
+## "Open AI CLI" Flow
 
 1. User clicks the Terminal icon button on a workspace bubble
 2. Frontend calls `api.sessions.create({ name, workspacePath })`

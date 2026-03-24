@@ -2,7 +2,7 @@
 
 ## System Overview
 
-Air Code is a monorepo with 4 packages that together provide a web-based canvas for managing Claude Code terminal sessions.
+Air Code is a monorepo with 4 packages that together provide a web-based canvas for managing AI CLI terminal sessions.
 
 > Version is defined in `packages/shared/src/constants.ts` (`VERSION`) and exposed via `/api/health`.
 
@@ -39,7 +39,7 @@ Air Code is a monorepo with 4 packages that together provide a web-based canvas 
                │                    │
                └────────┬───────────┘
                         ▼
-              Claude Code CLI running
+              AI CLI CLI running
                 in terminal session
 ```
 
@@ -64,16 +64,16 @@ Browser → POST /api/sessions → WAS → SMS
   │
   ├─ tmux backend:
   │   ├─ wsl tmux new-session -s cca-<id> -c <workspace>
-  │   ├─ tmux send-keys "claude [--resume] [--fork-session]"
+  │   ├─ tmux send-keys "cli [--resume] [--fork-session]"
   │   ├─ Insert DB (status='running', backend='tmux')
   │   ├─ Attach TmuxControlMode (node-pty → tmux attach-session)
-  │   └─ watchForClaudeSession() → detect .jsonl file
+  │   └─ watchForCliSession() → detect .jsonl file
   │
   └─ PTY backend:
       ├─ Insert DB (status='running', backend='pty')
       ├─ Spawn PtyDirectMode (powershell.exe or bash)
-      ├─ Type "claude [--resume] [--fork-session]"
-      └─ watchForClaudeSession() → detect .jsonl file
+      ├─ Type "cli [--resume] [--fork-session]"
+      └─ watchForCliSession() → detect .jsonl file
 ```
 
 ### Running (Terminal I/O)
@@ -89,11 +89,11 @@ PTY output → ctrl.emit('output') → multiplexer.broadcast()
 ### Fork (`--fork-session`)
 
 ```
-Browser → POST /api/sessions (claudeResumeId + forkSession: true)
+Browser → POST /api/sessions (cliResumeId + forkSession: true)
   → SMS creates NEW session ID
-  → Starts claude --resume <original-id> --fork-session
-  → Claude Code creates new .jsonl file (new branch)
-  → watchForClaudeSession() detects it
+  → Starts cli --resume <original-id> --fork-session
+  → AI CLI creates new .jsonl file (new branch)
+  → watchForCliSession() detects it
   → Original session continues undisturbed
 ```
 
@@ -117,15 +117,15 @@ Browser → POST /api/sessions/:id/reopen → WAS → SMS
   │
   ├─ tmux backend:
   │   ├─ wsl tmux new-session -s cca-<new-id> -c <workspace>
-  │   ├─ claude --resume <claudeSessionId> [--dangerously-skip-permissions]
+  │   ├─ cli --resume <cliSessionId> [--dangerously-skip-permissions]
   │   └─ Attach TmuxControlMode
   │
   └─ PTY backend:
       ├─ Spawn PtyDirectMode
-      └─ Type claude --resume <claudeSessionId>
+      └─ Type cli --resume <cliSessionId>
   │
   ├─ UPDATE sessions SET tmux_session=<new>, status='running'
-  ├─ watchForClaudeSession() if Claude type
+  ├─ watchForCliSession() if CLI type
   └─ Return same session ID (canvas position preserved)
 ```
 
@@ -153,9 +153,9 @@ Messages contain `sessionId` for routing. First browser opens SMS upstream, last
 
 **Message types:** `terminal:subscribe`, `terminal:unsubscribe`, `terminal:input`, `terminal:resize`, `terminal:data`, `terminal:error`
 
-## Claude Session Detection
+## CLI Session Detection
 
-When Claude Code starts, it creates a `.jsonl` file in `~/.claude/projects/<encoded-folder>/`.
+When AI CLI starts, it creates a `.jsonl` file in `~/.claude/projects/<encoded-folder>/`.
 
 ```
 1. Encode workspace path → folder name
@@ -166,7 +166,7 @@ When Claude Code starts, it creates a `.jsonl` file in `~/.claude/projects/<enco
 
 3. New .jsonl detected → extract filename as session UUID
 
-4. UPDATE sessions SET claude_session_id = ? WHERE id = ?
+4. UPDATE sessions SET cli_session_id = ? WHERE id = ?
 
 5. Close watcher (or timeout after 60s)
 ```
@@ -187,7 +187,7 @@ Event-driven (not polling) to avoid race conditions.
 ## Database Architecture
 
 **SMS database** (`packages/sms/data/sessions.db`):
-- `sessions` — Session metadata (id, name, tmux_session, workspace_path, status, type, claude_session_id, backend)
+- `sessions` — Session metadata (id, name, tmux_session, workspace_path, status, type, cli_session_id, backend)
 - `transcripts` — Session transcript entries (for future replay)
 
 **WAS database** (`packages/was/data/was.db`):
@@ -201,9 +201,9 @@ Both use SQLite with WAL mode and foreign keys enabled. Migrations are additive 
 ## Windows/WSL Bridge
 
 ```
-Windows (Node.js)              WSL (tmux, Claude Code)
+Windows (Node.js)              WSL (tmux, AI CLI)
 ├─ SMS runs here               ├─ /usr/bin/tmux (3.4)
-├─ WAS runs here               ├─ claude CLI
+├─ WAS runs here               ├─ AI CLI
 ├─ Vite runs here              └─ /mnt/c/... filesystem
 └─ Calls: wsl.exe
 ```
@@ -279,10 +279,10 @@ rendering old ANSI codes at wrong terminal size.
 ## Package Dependency Graph
 
 ```
-@claude-air/shared (types, constants, dates)
-  ├── @claude-air/sms (imports types + constants + instance)
-  ├── @claude-air/was (imports types + constants)
-  └── @claude-air/web (imports types + constants + dates)
+@air-code/shared (types, constants, dates)
+  ├── @air-code/sms (imports types + constants + instance)
+  ├── @air-code/was (imports types + constants)
+  └── @air-code/web (imports types + constants + dates)
 ```
 
-`@claude-air/shared/instance` is imported only by SMS and WAS (Node.js), never by web (browser).
+`@air-code/shared/instance` is imported only by SMS and WAS (Node.js), never by web (browser).

@@ -2,22 +2,29 @@
   "name": "air-code",
   "private": true,
   "scripts": {
-    "dev": "concurrently --kill-others -n sms,was -c blue,green \"pnpm --filter @claude-air/sms dev\" \"pnpm --filter @claude-air/was dev\"",
-    "dev:sms": "pnpm --filter @claude-air/sms dev",
-    "dev:was": "pnpm --filter @claude-air/was dev",
-    "dev:web": "pnpm --filter @claude-air/web dev",
+    "dev": "concurrently --kill-others -n sms,was -c blue,green \"pnpm --filter @air-code/sms dev\" \"pnpm --filter @air-code/was dev\"",
+    "dev:sms": "pnpm --filter @air-code/sms dev",
+    "dev:was": "pnpm --filter @air-code/was dev",
+    "dev:web": "pnpm --filter @air-code/web dev",
     "kill-all": "python scripts/kill-all.py",
     "build": "pnpm -r build",
-    "typecheck": "pnpm -r typecheck"
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "test:watch": "pnpm -r test:watch"
   },
   "devDependencies": {
     "concurrently": "^9.1.0",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "vitest": "^4.0.18"
   },
   "engines": {
     "node": ">=22.0.0"
   },
   "pnpm": {
-    "onlyBuiltDependencies": ["better-sqlite3", "esbuild", "node-pty"]
+    "onlyBuiltDependencies": [
+      "better-sqlite3",
+      "esbuild",
+      "node-pty"
+    ]
   }
 }

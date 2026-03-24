@@ -25,6 +25,38 @@
 - All tmux spawn/exec calls must route through `wsl` on Windows (`IS_WINDOWS` flag in SMS services)
 - WSL has tmux 3.4 at `/usr/bin/tmux`
 
+## Remote Terminal
+
+Share a terminal from any machine into the Air Code web UI:
+
+```bash
+npx tsx scripts/remote-agent.ts              # connects to localhost:7331
+npx tsx scripts/remote-agent.ts 192.168.7.101 # connects to HOST:7331
+npx tsx scripts/remote-agent.ts HOST:PORT     # custom port
+```
+
+- Agent connects directly to SMS (no auth, no WAS proxy)
+- Spawns a **new** shell — does NOT share the terminal you run the command from
+- Shows up in the canvas with an orange "REMOTE" badge and hostname tooltip
+- Auto-reconnects with exponential backoff if SMS restarts
+- Join/Fork buttons are hidden for remote sessions (PTY lives on the agent's machine)
+- Backend type: `'remote'` (vs `'tmux'` or `'pty'` for local sessions)
+- Key files: `scripts/remote-agent.ts`, `packages/sms/src/services/remote-agent.service.ts`, `packages/sms/src/ws/remote-terminal.handler.ts`
+
+## Canvas Keyboard Shortcuts
+
+| Key | Action |
+|-----|--------|
+| `Scroll` | Smooth pan |
+| `Ctrl+Scroll` | Smooth zoom (cursor-centered, rAF lerp) |
+| `Drag` | Move nodes |
+| `Tab` | Cycle to next terminal/workspace (left-to-right) |
+| `Shift+Tab` | Cycle backwards |
+| `Ctrl+K` | Toggle search dialog |
+| `Esc` | Close search / deselect active session |
+
+**Tab cycling order:** Workspaces sorted by X position (leftmost first, Y tiebreaker for equal X). Workspaces with sessions are replaced by their sessions in the focus list (sorted by visual grid position: leftmost then topmost). Empty workspaces appear as their own tab stop. Orphan sessions appended at end.
+
 ## Auth
 
 - Default invite code: `WELCOME1`

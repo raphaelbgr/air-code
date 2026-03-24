@@ -1,18 +1,18 @@
 # SMS — Session Manager Server
 
-**Package:** `@claude-air/sms` | **Port:** 7331 | **Entry:** `src/index.ts`
+**Package:** `@air-code/sms` | **Port:** 7331 | **Entry:** `src/index.ts`
 
 ## Overview
 
-SMS manages Claude Code terminal sessions running via **tmux** (through WSL on Windows) or **native PTY** (PowerShell/bash). It spawns, controls, and streams terminal output from Claude Code sessions over WebSocket.
+SMS manages AI CLI terminal sessions running via **tmux** (through WSL on Windows) or **native PTY** (PowerShell/bash). It spawns, controls, and streams terminal output from AI CLI sessions over WebSocket.
 
 ## Core Responsibilities
 
-- Spawn and manage Claude Code sessions in tmux or native PTY
+- Spawn and manage AI CLI sessions in tmux or native PTY
 - Stream real-time terminal output to WebSocket clients via multiplexed broadcasting
 - Handle keyboard input and terminal resize events
-- Track session metadata in SQLite (status, workspace, Claude session IDs)
-- Auto-detect Claude session IDs by watching `~/.claude/projects/`
+- Track session metadata in SQLite (status, workspace, CLI session IDs)
+- Auto-detect CLI session IDs by watching `~/.claude/projects/`
 - Reconcile orphan tmux sessions on startup
 - Lazy-load PTY processes only when clients connect
 
@@ -36,7 +36,7 @@ Main orchestrator for session lifecycle.
 
 | Method | Purpose |
 |--------|---------|
-| `create(req)` | Spawn new Claude Code or shell session (tmux or PTY) |
+| `create(req)` | Spawn new AI CLI or shell session (tmux or PTY) |
 | `list()` | Get all sessions, checking live status |
 | `get(id)` | Get single session metadata |
 | `kill(id)` | Terminate session, cleanup db/watchers |
@@ -45,7 +45,7 @@ Main orchestrator for session lifecycle.
 | `reattach(id)` | Reconnect to session after network disconnect |
 | `reattachAll()` | Lazy-load preparation (called on startup) |
 | `ensureAttached(id)` | Trigger actual PTY spawning on first client |
-| `reopen(id, claudeArgs?)` | Reopen stopped session with fresh tmux/PTY (same DB row) |
+| `reopen(id, cliArgs?)` | Reopen stopped session with fresh tmux/PTY (same DB row) |
 | `cleanupOrphans()` | Mark dead sessions as stopped, adopt orphan tmux on startup |
 
 ### TmuxControlMode (`src/services/tmux-control.service.ts`)
@@ -84,15 +84,15 @@ Manages one-to-many WebSocket connections for a single session.
 
 Stores transcript/chat entries in SQLite for future session replay.
 
-### watchForClaudeSession
+### watchForCliSession
 
-Claude Code writes `.jsonl` files to `~/.claude/projects/<folder>/`. SMS watches this directory with `fs.watch` to detect new sessions:
+AI CLI writes `.jsonl` files to `~/.claude/projects/<folder>/`. SMS watches this directory with `fs.watch` to detect new sessions:
 
 1. Encode workspace path to folder name (Windows: `C:\Users\foo` → `C--Users-foo`)
 2. Snapshot existing `.jsonl` files in the folder
 3. Open `fs.watch` (event-driven, not polling)
 4. When new `.jsonl` appears, extract session ID from filename
-5. Update database with `claude_session_id`
+5. Update database with `cli_session_id`
 6. Close watcher after detection (or after 60s timeout)
 
 ## REST API
@@ -107,7 +107,7 @@ Base path: `/api/sessions`
 | `/:id` | DELETE | Kill session |
 | `/:id` | PUT | Rename session |
 | `/:id/reattach` | POST | Reconnect to session |
-| `/:id/reopen` | POST | Reopen stopped session with fresh process (`{ claudeArgs? }`) |
+| `/:id/reopen` | POST | Reopen stopped session with fresh process (`{ cliArgs? }`) |
 | `/:id/send` | POST | Send keyboard input (`{ keys }`) |
 | `/:id/output` | GET | Capture scrollback (`?lines=100`) |
 | `/:id/paste-image` | POST | Upload pasted image, returns `{ path }` |
@@ -124,10 +124,10 @@ Base path: `/api/browse`
 {
   "name": "my-workspace",
   "workspacePath": "C:\\Users\\rbgnr\\git\\my-project",
-  "type": "claude",
+  "type": "cli",
   "backend": "tmux",
   "skipPermissions": false,
-  "claudeResumeId": "optional-session-to-resume",
+  "cliResumeId": "optional-session-to-resume",
   "forkSession": false
 }
 ```
@@ -163,9 +163,9 @@ CREATE TABLE sessions (
   tmux_session TEXT UNIQUE,
   workspace_path TEXT NOT NULL,
   status TEXT CHECK (status IN ('running','idle','stopped','error')),
-  type TEXT CHECK (type IN ('shell','claude')),
+  type TEXT CHECK (type IN ('shell','cli')),
   skip_permissions INTEGER DEFAULT 0,
-  claude_session_id TEXT,
+  cli_session_id TEXT,
   backend TEXT CHECK (backend IN ('tmux','pty')),
   created_at TEXT,
   last_activity TEXT
@@ -200,7 +200,7 @@ Returns OS label (e.g. "Windows 11") and machine hostname (e.g. "WINDOWS-DESKTOP
 - Tmux commands route through WSL: `wsl bash -c "tmux ..."`
 - Path conversion: `C:\Users\foo` ↔ `/mnt/c/Users/foo`
 - Project folder symlinks bridge Windows/WSL path encodings
-- HOME set explicitly when launching Claude Code in tmux
+- HOME set explicitly when launching AI CLI in tmux
 
 ## Dependencies
 

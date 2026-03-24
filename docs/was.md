@@ -1,6 +1,6 @@
 # WAS — Web Application Server
 
-**Package:** `@claude-air/was` | **Port:** 7333 | **Entry:** `src/index.ts`
+**Package:** `@air-code/was` | **Port:** 7333 | **Entry:** `src/index.ts`
 
 ## Overview
 
@@ -15,7 +15,7 @@ WAS is the central API hub for Air Code. It handles authentication, serves the R
 - Canvas state persistence (visual workspace layout)
 - Real-time presence tracking (Socket.IO)
 - Multiplex terminal I/O (WebSocket channels)
-- AI agent tasks (Claude API integration)
+- AI agent tasks (AI API integration)
 
 ## Configuration
 
@@ -29,7 +29,7 @@ Environment variables (loaded from `.env`):
 | `WAS_JWT_SECRET` | dev-secret-change-me | JWT signing key |
 | `WAS_JWT_EXPIRY` | 7d | Token expiration |
 | `WAS_DB_PATH` | ./data/was.db | SQLite database |
-| `ANTHROPIC_API_KEY` | (empty) | Claude API key for agent |
+| `ANTHROPIC_API_KEY` | (empty) | AI API key for agent |
 | `AI_AGENT_MODEL` | claude-sonnet-4-20250514 | Agent model |
 | `AI_AGENT_MAX_TOKENS` | 4096 | Max tokens per response |
 
@@ -79,7 +79,7 @@ Returns `{ token, user }`.
 | `/` | POST | Create workspace |
 | `/:id` | PUT | Update workspace metadata |
 | `/:id/settings` | PATCH | Update workspace settings |
-| `/:id/claude-sessions` | GET | List Claude Code conversations |
+| `/:id/cli-sessions` | GET | List AI CLI conversations |
 | `/:id` | DELETE | Delete workspace (cascade-kills sessions) |
 
 ### Canvas (`/api/canvas`) — Protected
@@ -180,12 +180,12 @@ Socket.IO for real-time user awareness. Events: `PRESENCE_JOIN`, `PRESENCE_LEAVE
 - Broadcasts full user list on join/leave/update
 
 ### AgentService
-- Claude SDK integration for autonomous session management
+- AI SDK integration for autonomous session management
 - Multi-turn tool-use loop (up to 10 turns)
 
 ## Workspace Detection
 
-Scans `~/.claude/projects/` for Claude Code session data:
+Scans `~/.claude/projects/` for AI CLI session data:
 - Reads `.jsonl` files directly (sessions-index.json deprecated)
 - Extracts session ID, summary, message count, git branch
 - 30-second cache TTL to avoid excessive filesystem reads
@@ -195,7 +195,7 @@ Scans `~/.claude/projects/` for Claude Code session data:
 
 | Package | Purpose |
 |---------|---------|
-| @anthropic-ai/sdk | Claude API for agent |
+| @anthropic-ai/sdk | AI API for agent |
 | bcryptjs | Password hashing |
 | better-sqlite3 | SQLite database |
 | express | HTTP server |

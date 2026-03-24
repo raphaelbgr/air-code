@@ -1,10 +1,10 @@
 # Web — Frontend Application
 
-**Package:** `@claude-air/web` | **Port:** 5173 (dev) | **Entry:** `src/main.tsx`
+**Package:** `@air-code/web` | **Port:** 5173 (dev) | **Entry:** `src/main.tsx`
 
 ## Overview
 
-React frontend for managing interactive terminal sessions and Claude Code workspaces. Provides a canvas-based session visualization with real-time terminal streaming, multi-user presence, session forking, and workspace management.
+React frontend for managing interactive terminal sessions and AI CLI workspaces. Provides a canvas-based session visualization with real-time terminal streaming, multi-user presence, session forking, and workspace management.
 
 **Stack:** React 19 + TypeScript + Zustand + ReactFlow + xterm.js + Vite + Tailwind CSS v4
 
@@ -13,31 +13,35 @@ React frontend for managing interactive terminal sessions and Claude Code worksp
 ### Canvas (`src/components/canvas/`)
 
 #### CanvasView.tsx
-Main ReactFlow wrapper. Manages node/edge state, layout initialization, viewport. Polls sessions/workspaces every 5 seconds. Handles Cmd+K search. Auto-saves canvas layout every 15s.
+Main ReactFlow wrapper. Manages node/edge state, layout initialization, viewport. Polls sessions/workspaces every 5 seconds. Auto-saves canvas layout every 15s.
+- **Keyboard handler:** Unified capture-phase listener for Ctrl+K (search), Escape (deselect), Tab/Shift+Tab (cycle through terminals/workspaces)
+- **Tab cycling:** Ordered by visual X position (leftmost first). Workspaces with sessions are replaced by their sessions (sorted by grid position). Empty workspaces kept as tab stops. Uses `lastTabNodeId` ref to track position across workspace/session boundaries.
+- **Smooth scroll:** Custom wheel handler — pan uses `setViewport({ duration })`, zoom uses rAF lerp loop (cursor-centered, avoids d3 transition jitter)
+- **SearchDialog:** Rendered here (inside ReactFlowProvider) so it can use `useReactFlow()`
 
 #### SessionNode.tsx
 Individual session card (ReactFlow node):
 - **Header:** Session name, status dot (green/orange/gray/red), action buttons
 - **Terminal preview:** Live xterm output or "Session stopped" message
 - **Footer:** Workspace folder name, viewer avatars
-- **Actions:** Reopen (all stopped sessions), Fork (Claude sessions), Kill, Copy tmux attach command, Join locally
+- **Actions:** Reopen (all stopped sessions), Fork (CLI sessions), Kill, Copy tmux attach command, Join locally
 - **Presence:** Colored borders show which users are viewing the session
 
 #### WorkspaceBubble.tsx
 Workspace container (ReactFlow parent node):
 - **Header:** Folder icon, workspace name, settings, session count badge
-- **Dropdowns:** Two sectioned dropdowns for Terminal (Shell/WSL) and Claude (PowerShell/WSL)
+- **Dropdowns:** Two sectioned dropdowns for Terminal (Shell/WSL) and AI CLI (PowerShell/WSL)
 - **Footer:** Workspace path + description
 - Dynamic sizing: grows/shrinks to fit child sessions (3 per row grid)
 
 #### CanvasToolbar.tsx
-Top-left action buttons: Workspace, Detect, Session, Search (Cmd+K), Agent.
+Top-left action buttons: Workspace, Detect, Session, Search (Cmd+K), Agent. Search button reads `showSearch` from canvas store directly (no prop).
 
 #### SaveStatusIcon.tsx
 Cloud icon showing canvas layout save status (idle → saving → saved → idle).
 
 #### SearchDialog.tsx
-Cmd+K search for sessions/workspaces with keyboard navigation.
+Cmd+K search for sessions/workspaces with keyboard navigation. Clicking a session result zooms to it AND sets it as the active session.
 
 ### Terminal (`src/components/terminal/`)
 
@@ -59,12 +63,12 @@ Dark theme (#0a0a0f background), indigo cursor (#818cf8).
 ### Dialogs (`src/components/dialogs/`)
 - **CreateSessionDialog** — Manual session creation
 - **CreateWorkspaceDialog** — Create or import workspaces
-- **DetectWorkspacesDialog** — Folder browser with breadcrumb navigation + auto-detect Claude projects
-- **WorkspaceSettingsDialog** — Edit workspace settings, Claude args
-- **ClaudeLauncherDialog** — Launch Claude Code with resume/fork options
+- **DetectWorkspacesDialog** — Folder browser with breadcrumb navigation + auto-detect CLI projects
+- **WorkspaceSettingsDialog** — Edit workspace settings, CLI args
+- **LauncherDialog** — Launch AI CLI with resume/fork options
 
 ### Layout (`src/components/`)
-- **AppLayout.tsx** — Top-level layout, initializes WebSocket/Socket.IO/canvas sync
+- **AppLayout.tsx** — Top-level layout, initializes WebSocket/Socket.IO/canvas sync. Keyboard shortcuts and SearchDialog live in CanvasView (needs ReactFlow context), not here.
 - **TopBar** — Version badge (v0.1.0), hostname, OS, connected URL, user display, logout, save status icon
 - Mobile variants: MobileListView, MobileTerminal, MobileFAB
 
@@ -77,8 +81,10 @@ Dark theme (#0a0a0f background), indigo cursor (#818cf8).
   edges: Edge[];
   viewport: Viewport;              // x, y, zoom
   activeSessionId: string | null;  // Currently selected session
+  showSearch: boolean;             // Search dialog open state
   saveStatus: 'idle'|'saving'|'saved'|'error';
 
+  setShowSearch(open) / toggleSearch()
   initCanvasFromData(workspaces, sessions, savedLayout?)
   mergeCanvasWithData(workspaces, sessions)  // 5s poll merges
 }
@@ -116,11 +122,11 @@ api.auth.login(username, password)
 api.auth.register(username, password, displayName, inviteCode)
 
 api.sessions.list()
-api.sessions.create({ name, workspacePath, type?, backend?, skipPermissions?, claudeArgs?, claudeResumeId?, forkSession? })
+api.sessions.create({ name, workspacePath, type?, backend?, skipPermissions?, cliArgs?, cliResumeId?, forkSession? })
 api.sessions.kill(id)
 api.sessions.sendKeys(id, keys)
 api.sessions.reattach(id)
-api.sessions.reopen(id, { claudeArgs? })
+api.sessions.reopen(id, { cliArgs? })
 api.sessions.captureOutput(id, lines?)
 api.sessions.uploadImage(id, blob)
 
@@ -130,7 +136,7 @@ api.workspaces.detect()
 api.workspaces.browse(path?)
 api.workspaces.import(workspaces[])
 api.workspaces.updateSettings(id, settings)
-api.workspaces.claudeSessions(id)
+api.workspaces.cliSessions(id)
 
 api.canvas.get()
 api.canvas.save(state)

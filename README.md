@@ -1,6 +1,6 @@
 # Air Code v0.1.0
 
-A web-based canvas for managing multiple Claude Code terminal sessions. Organize sessions into workspaces, view live terminal output, fork conversations, and collaborate with multi-user presence.
+A web-based canvas for managing multiple AI CLI terminal sessions. Organize sessions into workspaces, view live terminal output, fork conversations, and collaborate with multi-user presence.
 
 ![Air Code Screenshot](docs/screenshot.png)
 
@@ -9,25 +9,25 @@ A web-based canvas for managing multiple Claude Code terminal sessions. Organize
 - **Canvas-based session management** — Drag, resize, and organize session cards within workspace bubbles
 - **Real-time terminal streaming** — Live xterm.js terminals with WebSocket multiplexing
 - **Dual backends** — tmux (persistent, via WSL) or native PTY (PowerShell/bash)
-- **Session forking** — Branch Claude Code conversations with `--fork-session`
+- **Session forking** — Branch AI CLI conversations with `--fork-session`
 - **Workspace detection** — Auto-detect projects from `~/.claude/projects/`
 - **Multi-user presence** — See who's viewing which session in real-time
-- **AI agent** — Natural language session management via Claude API
+- **AI agent** — Natural language session management via AI API
 - **Canvas persistence** — Layout auto-saves every 15 seconds
 
 ## Architecture
 
 ```
 Browser (:5173)  →  WAS (:7333)  →  SMS (:7331)  →  tmux/PTY
-   React/xterm       API hub          Sessions        Claude Code
+   React/xterm       API hub          Sessions        AI CLI
 ```
 
 | Package | Description | Port |
 |---------|-------------|------|
-| `@claude-air/web` | React frontend (Vite + Tailwind + ReactFlow + xterm.js) | 5173 |
-| `@claude-air/was` | Web Application Server (auth, workspaces, canvas, proxy) | 7333 |
-| `@claude-air/sms` | Session Manager Server (PTY/tmux lifecycle, terminal I/O) | 7331 |
-| `@claude-air/shared` | Shared types, constants, date utilities | — |
+| `@air-code/web` | React frontend (Vite + Tailwind + ReactFlow + xterm.js) | 5173 |
+| `@air-code/was` | Web Application Server (auth, workspaces, canvas, proxy) | 7333 |
+| `@air-code/sms` | Session Manager Server (PTY/tmux lifecycle, terminal I/O) | 7331 |
+| `@air-code/shared` | Shared types, constants, date utilities | — |
 
 ## Prerequisites
 
@@ -43,7 +43,7 @@ Browser (:5173)  →  WAS (:7333)  →  SMS (:7331)  →  tmux/PTY
 pnpm install
 
 # Build shared package
-pnpm --filter @claude-air/shared build
+pnpm --filter @air-code/shared build
 
 # Start all servers (SMS + WAS)
 pnpm dev
