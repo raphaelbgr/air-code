@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
-import type { ApiResponse, AuthResponse } from '@claude-air/shared';
+import type { ApiResponse, AuthResponse } from '@air-code/shared';
 import { AuthService } from '../services/auth.service.js';
 
 const RegisterSchema = z.object({

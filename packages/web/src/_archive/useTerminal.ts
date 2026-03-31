@@ -7,7 +7,7 @@ import '@xterm/xterm/css/xterm.css';
 import { useAuthStore } from '@/stores/auth.store';
 import { useTerminalStore } from '@/stores/terminal.store';
 import { createTerminalWs, sendTerminalInput, sendTerminalResize } from '@/lib/ws';
-import type { WsMessage } from '@claude-air/shared';
+import type { WsMessage } from '@air-code/shared';
 
 export function useTerminal(sessionId: string, containerRef: RefObject<HTMLDivElement | null>) {
   const token = useAuthStore((s) => s.token);

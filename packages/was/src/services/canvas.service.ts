@@ -1,5 +1,5 @@
 import pino from 'pino';
-import type { CanvasState } from '@claude-air/shared';
+import type { CanvasState } from '@air-code/shared';
 import { getDb } from '../db/database.js';
 
 const log = pino({ name: 'canvas' });

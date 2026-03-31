@@ -1,4 +1,4 @@
-import type { PresenceUser } from '@claude-air/shared';
+import type { PresenceUser } from '@air-code/shared';
 import pino from 'pino';
 
 const log = pino({ name: 'presence' });

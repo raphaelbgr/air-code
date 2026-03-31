@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { useAuthStore } from '@/stores/auth.store';
 import { usePresenceStore } from '@/stores/presence.store';
 import { getSocket, disconnectSocket } from '@/lib/socket';
-import { PRESENCE_USERS, PRESENCE_UPDATE } from '@claude-air/shared';
+import { PRESENCE_USERS, PRESENCE_UPDATE } from '@air-code/shared';
 import type { PresenceUser } from '@/types';
 
 export function usePresence() {

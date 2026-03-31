@@ -12,7 +12,8 @@ import { createSessionRoutes } from './routes/sessions.js';
 import { createHealthRoutes } from './routes/health.js';
 import { createBrowseRoutes } from './routes/browse.js';
 import { setupTerminalWebSocket } from './ws/terminal.handler.js';
-import { registerInstance, deregisterInstance } from '@claude-air/shared/instance';
+import { setupRemoteTerminalWebSocket } from './ws/remote-terminal.handler.js';
+import { registerInstance, deregisterInstance } from '@air-code/shared/instance';
 
 // Catch-all error handlers to prevent silent hangs
 process.on('uncaughtException', (err) => {
@@ -46,29 +47,53 @@ const _transcriptService = new TranscriptService();
 // Initialize DB
 getDb();
 
+// Async init for session service (tmux detection)
+await sessionService.init();
+
 // REST routes
 app.use('/api/sessions', createSessionRoutes(sessionService));
 app.use('/api/health', createHealthRoutes(sessionService));
 app.use('/api/browse', createBrowseRoutes());
 
-// WebSocket for terminal I/O
-const wss = new WebSocketServer({ server, path: '/ws/terminal' });
+// WebSocket servers (noServer: ws docs require this when routing multiple WSS on one HTTP server)
+const wss = new WebSocketServer({ noServer: true, perMessageDeflate: false });
 setupTerminalWebSocket(wss, sessionService, multiplexers);
 
+const remoteWss = new WebSocketServer({ noServer: true, perMessageDeflate: false });
+setupRemoteTerminalWebSocket(remoteWss, sessionService, multiplexers);
+
+// Route WebSocket upgrades by path
+server.on('upgrade', (req, socket, head) => {
+  const pathname = req.url?.split('?')[0];
+  if (pathname === '/ws/terminal') {
+    wss.handleUpgrade(req, socket, head, (ws) => {
+      wss.emit('connection', ws, req);
+    });
+  } else if (pathname === '/ws/remote-terminal') {
+    remoteWss.handleUpgrade(req, socket, head, (ws) => {
+      remoteWss.emit('connection', ws, req);
+    });
+  } else {
+    socket.destroy();
+  }
+});
+
 // Clean up orphan tmux sessions not tracked in DB, mark dead DB sessions as stopped
-sessionService.cleanupOrphans();
+await sessionService.cleanupOrphans();
 
 // Reattach to existing tmux sessions
-sessionService.reattachAll();
+await sessionService.reattachAll();
 
 // Start server
-server.listen(config.port, config.host, () => {
-  const tmuxAvailable = sessionService.checkTmux();
+server.listen(config.port, config.host, async () => {
+  const tmuxAvailable = await sessionService.checkTmux();
+  const cliProviders = await sessionService.checkCliProviders();
   log.info({
     port: config.port,
     host: config.host,
     tmux: tmuxAvailable ? 'available' : 'NOT FOUND',
     mock: sessionService.isMockMode,
+    cliProviders,
   }, `SMS server started on http://${config.host}:${config.port}`);
 
   registerInstance('sms', config.port, import.meta.url);

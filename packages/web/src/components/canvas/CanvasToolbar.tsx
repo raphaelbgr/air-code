@@ -1,15 +1,16 @@
 import { Plus, FolderPlus, FolderSearch, Search, Bot } from 'lucide-react';
 import { useAgentStore } from '@/stores/agent.store';
+import { useCanvasStore } from '@/stores/canvas.store';
 
 interface CanvasToolbarProps {
   onCreateWorkspace: () => void;
   onDetectWorkspaces: () => void;
   onCreateSession: () => void;
-  onSearch: () => void;
 }
 
-export function CanvasToolbar({ onCreateWorkspace, onDetectWorkspaces, onCreateSession, onSearch }: CanvasToolbarProps) {
+export function CanvasToolbar({ onCreateWorkspace, onDetectWorkspaces, onCreateSession }: CanvasToolbarProps) {
   const toggleAgent = useAgentStore((s) => s.togglePanel);
+  const setShowSearch = useCanvasStore((s) => s.setShowSearch);
 
   return (
     <div className="absolute top-4 left-4 z-10 flex gap-2">
@@ -35,7 +36,7 @@ export function CanvasToolbar({ onCreateWorkspace, onDetectWorkspaces, onCreateS
         Session
       </button>
       <button
-        onClick={onSearch}
+        onClick={() => setShowSearch(true)}
         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-bg-elevated border border-border hover:border-border-bright text-text-secondary text-sm transition"
         title="Cmd+K"
       >

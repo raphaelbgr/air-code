@@ -1,4 +1,4 @@
-import type { WsMessage } from '@claude-air/shared';
+import type { WsMessage } from '@air-code/shared';
 
 /**
  * @deprecated Use `terminalChannel` from `@/lib/terminal-channel` instead.

@@ -1,8 +1,10 @@
 // ── Session types ──
 
+import type { CliProviderId } from './cli-providers/index.js';
+
 export type SessionStatus = 'running' | 'idle' | 'stopped' | 'error';
-export type SessionType = 'shell' | 'claude';
-export type SessionBackend = 'tmux' | 'pty';
+export type SessionType = 'shell' | 'cli';
+export type SessionBackend = 'tmux' | 'pty' | 'remote';
 
 export interface Session {
   id: string;
@@ -12,8 +14,10 @@ export interface Session {
   status: SessionStatus;
   type: SessionType;
   skipPermissions: boolean;
-  claudeSessionId?: string;
+  cliSessionId?: string;
   backend?: SessionBackend;
+  cliProvider?: CliProviderId;
+  agentHostname?: string;
   createdAt: string;
   lastActivity: string;
 }
@@ -23,13 +27,14 @@ export interface CreateSessionRequest {
   workspacePath: string;
   type?: SessionType;
   skipPermissions?: boolean;
-  claudeArgs?: string;
-  claudeResumeId?: string;
+  cliArgs?: string;
+  cliResumeId?: string;
   forkSession?: boolean;
   backend?: SessionBackend;
+  cliProvider?: CliProviderId;
 }
 
-export interface ClaudeSession {
+export interface CliSession {
   sessionId: string;
   summary: string;
   messageCount: number;
@@ -45,8 +50,10 @@ export interface SendKeysRequest {
 // ── Workspace types ──
 
 export interface WorkspaceSettings {
-  skipPermissions?: boolean;
-  claudeArgs?: string;
+  /** Per-provider skip-permissions, keyed by provider ID (e.g. { claude: true, gemini: false }) */
+  skipPermissions?: Partial<Record<CliProviderId, boolean>>;
+  cliArgs?: string;
+  cliProvider?: CliProviderId;
 }
 
 export interface Workspace {
@@ -58,8 +65,8 @@ export interface Workspace {
   settings?: WorkspaceSettings;
   createdBy?: string;
   createdAt: string;
-  claudeSessionCount?: number;
-  claudeLastActive?: string;
+  cliSessionCount?: number;
+  cliLastActive?: string;
 }
 
 export interface DetectedWorkspace {
@@ -136,7 +143,9 @@ export type WsMessageType =
   | 'terminal:input'
   | 'terminal:subscribe'
   | 'terminal:unsubscribe'
-  | 'terminal:error';
+  | 'terminal:error'
+  | 'remote:register'
+  | 'remote:registered';
 
 export interface WsMessage {
   type: WsMessageType;
@@ -147,6 +156,8 @@ export interface WsMessage {
   preview?: boolean;
   error?: string;
   code?: number;
+  hostname?: string;
+  shell?: string;
 }
 
 // ── Agent types ──

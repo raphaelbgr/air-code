@@ -4,17 +4,19 @@ import { tmpdir } from 'node:os';
 import { writeFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
-import type { ApiResponse, Session } from '@claude-air/shared';
+import type { ApiResponse, Session } from '@air-code/shared';
 import { SessionService } from '../services/session.service.js';
 
 const CreateSessionSchema = z.object({
   name: z.string().min(1).max(100),
   workspacePath: z.string().min(1),
-  type: z.enum(['shell', 'claude']).optional(),
+  type: z.enum(['shell', 'cli']).optional(),
   backend: z.enum(['tmux', 'pty']).optional(),
   skipPermissions: z.boolean().optional().default(false),
-  claudeArgs: z.string().optional(),
-  claudeResumeId: z.string().optional(),
+  cliArgs: z.string().optional(),
+  cliResumeId: z.string().optional(),
+  forkSession: z.boolean().optional(),
+  cliProvider: z.enum(['claude', 'gemini']).optional(),
 });
 
 const SendKeysSchema = z.object({
@@ -26,7 +28,7 @@ const RenameSchema = z.object({
 });
 
 const ReopenSchema = z.object({
-  claudeArgs: z.string().optional(),
+  cliArgs: z.string().optional(),
 });
 
 function paramId(req: Request): string {
@@ -38,8 +40,8 @@ export function createSessionRoutes(sessionService: SessionService): Router {
   const router = Router();
 
   // List all sessions
-  router.get('/', (_req: Request, res: Response) => {
-    const sessions = sessionService.list();
+  router.get('/', async (_req: Request, res: Response) => {
+    const sessions = await sessionService.list();
     const body: ApiResponse<Session[]> = { ok: true, data: sessions };
     res.json(body);
   });
@@ -98,9 +100,9 @@ export function createSessionRoutes(sessionService: SessionService): Router {
   });
 
   // Reattach control mode to a session (reconnect tmux streaming)
-  router.post('/:id/reattach', (req: Request, res: Response) => {
+  router.post('/:id/reattach', async (req: Request, res: Response) => {
     try {
-      const session = sessionService.reattach(paramId(req));
+      const session = await sessionService.reattach(paramId(req));
       if (!session) {
         res.status(404).json({ ok: false, error: 'Session not found' } satisfies ApiResponse<never>);
         return;
@@ -120,7 +122,7 @@ export function createSessionRoutes(sessionService: SessionService): Router {
       return;
     }
     try {
-      const session = await sessionService.reopen(paramId(req), parsed.data.claudeArgs);
+      const session = await sessionService.reopen(paramId(req), parsed.data.cliArgs);
       const body: ApiResponse<Session> = { ok: true, data: session };
       res.json(body);
     } catch (err) {

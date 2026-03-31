@@ -1,6 +1,7 @@
 import { EventEmitter } from 'node:events';
 import * as pty from 'node-pty';
 import pino from 'pino';
+import type { IControlMode } from './control-mode.interface.js';
 
 const log = pino({ name: 'pty-direct' });
 const IS_WINDOWS = process.platform === 'win32';
@@ -16,7 +17,7 @@ export interface PtyDirectMode {
  * Direct PTY mode — spawns a native shell (powershell.exe / bash) without tmux.
  * Same EventEmitter interface as TmuxControlMode so SessionService can use either.
  */
-export class PtyDirectMode extends EventEmitter {
+export class PtyDirectMode extends EventEmitter implements IControlMode {
   private ptyProcess: pty.IPty | null = null;
   private _attached = false;
 

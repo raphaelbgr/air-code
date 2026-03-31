@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import { Search, Terminal, Folder } from 'lucide-react';
 import { useReactFlow } from '@xyflow/react';
 import { useSessionStore } from '@/stores/session.store';
+import { useCanvasStore } from '@/stores/canvas.store';
 
 interface SearchDialogProps {
   open: boolean;
@@ -14,6 +15,7 @@ export function SearchDialog({ open, onClose }: SearchDialogProps) {
   const sessions = useSessionStore((s) => s.sessions);
   const workspaces = useSessionStore((s) => s.workspaces);
   const reactFlow = useReactFlow();
+  const setActiveSession = useCanvasStore((s) => s.setActiveSession);
 
   useEffect(() => {
     if (open) {
@@ -40,6 +42,7 @@ export function SearchDialog({ open, onClose }: SearchDialogProps) {
   const handleSessionClick = (sessionId: string) => {
     const nodeId = `session-${sessionId}`;
     reactFlow.fitView({ nodes: [{ id: nodeId }], duration: 300, padding: 0.5 });
+    setActiveSession(sessionId);
     onClose();
   };
 

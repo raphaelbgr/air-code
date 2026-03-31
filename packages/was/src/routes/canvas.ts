@@ -1,5 +1,5 @@
 import { Router, type Response } from 'express';
-import type { ApiResponse, CanvasState } from '@claude-air/shared';
+import type { ApiResponse, CanvasState } from '@air-code/shared';
 import { CanvasService } from '../services/canvas.service.js';
 import type { AuthenticatedRequest } from '../types.js';
 

@@ -2,7 +2,8 @@ import { readdir, readFile, stat, access } from 'node:fs/promises';
 import { join, basename, resolve } from 'node:path';
 import { homedir } from 'node:os';
 import pino from 'pino';
-import type { DetectedWorkspace } from '@claude-air/shared';
+import type { DetectedWorkspace } from '@air-code/shared';
+import { getAllCliProviders, getCliProvider } from '@air-code/shared';
 import { getDb } from '../db/database.js';
 
 const log = pino({ name: 'workspace-detector' });
@@ -24,7 +25,7 @@ interface SessionEntry {
   diskSize: number;
 }
 
-interface ClaudeProjectEntry {
+interface CliProjectEntry {
   projectPath: string;
   sessionCount: number;
   lastActive: string;
@@ -38,25 +39,12 @@ function normalizePath(p: string): string {
 }
 
 /**
- * Decode a Claude projects folder name back to the original filesystem path.
- * Claude encodes paths as: C:\Users\foo -> C--Users-foo
- */
-function decodeFolderName(folderName: string): string {
-  const match = folderName.match(/^([A-Za-z])--(.*)$/);
-  if (!match) return folderName;
-  const drive = match[1].toUpperCase();
-  const rest = match[2].replace(/-/g, '\\');
-  return `${drive}:\\${rest}`;
-}
-
-/**
- * Encode a filesystem path to Claude's folder name format.
+ * Encode a filesystem path to the CLI's folder name format.
+ * Delegates to the Claude provider for backward compatibility.
  * C:\Users\rbgnr\git\Stream-Lens -> C--Users-rbgnr-git-Stream-Lens
  */
 export function encodeFolderName(fsPath: string): string {
-  const match = fsPath.match(/^([A-Za-z]):\\(.*)$/);
-  if (!match) return fsPath;
-  return `${match[1]}--${match[2].replace(/\\/g, '-')}`;
+  return getCliProvider('claude').encodeFolderName(fsPath);
 }
 
 function getExistingPaths(): Set<string> {
@@ -77,83 +65,85 @@ async function exists(path: string): Promise<boolean> {
 }
 
 /**
- * Scan all Claude project entries from ~/.claude/projects/.
- * Shared core logic used by both detectFromClaudeProjects and getClaudeStatsMap.
+ * Scan all CLI project entries across all registered providers.
+ * Iterates each provider's projectsDir and uses provider-specific
+ * folder name decoding and session file extensions.
  */
-async function scanClaudeProjectEntries(): Promise<ClaudeProjectEntry[]> {
-  const projectsDir = join(homedir(), '.claude', 'projects');
-  const results: ClaudeProjectEntry[] = [];
+async function scanCliProjectEntries(): Promise<CliProjectEntry[]> {
+  const results: CliProjectEntry[] = [];
 
-  let entries: string[];
-  try {
-    entries = await readdir(projectsDir);
-  } catch {
-    log.warn({ projectsDir }, 'Could not read Claude projects directory');
-    return [];
-  }
+  for (const provider of getAllCliProviders()) {
+    const projectsDir = join(homedir(), provider.projectsDir);
+    const ext = provider.sessionFileExt;
 
-  for (const entry of entries) {
-    if (entry.startsWith('-') || entry.startsWith('.')) continue;
-
-    const entryPath = join(projectsDir, entry);
+    let entries: string[];
     try {
-      const s = await stat(entryPath);
-      if (!s.isDirectory()) continue;
+      entries = await readdir(projectsDir);
     } catch {
+      // Provider directory doesn't exist yet — skip silently
       continue;
     }
 
-    let projectPath: string | null = null;
-    let sessionCount = 0;
-    let lastActive = '';
+    for (const entry of entries) {
+      if (entry.startsWith('-') || entry.startsWith('.')) continue;
 
-    // Count .jsonl files and extract projectPath from session data.
-    // sessions-index.json is deprecated since Claude Code v2.1.31; scan .jsonl directly.
-    try {
-      const dirFiles = await readdir(entryPath);
-      const jsonlFiles = dirFiles.filter(f => f.endsWith('.jsonl'));
-      sessionCount = jsonlFiles.length;
-
-      let latestMtime = 0;
-      for (const f of jsonlFiles) {
-        try {
-          const s = await stat(join(entryPath, f));
-          if (s.mtimeMs > latestMtime) latestMtime = s.mtimeMs;
-        } catch { /* skip */ }
-
-        // Extract real project path from first .jsonl that has a cwd field
-        if (!projectPath) {
-          try {
-            const raw = await readFile(join(entryPath, f), 'utf-8');
-            // Read only the first few lines to find cwd (avoid parsing entire file)
-            const lines = raw.split('\n', 10);
-            for (const line of lines) {
-              if (!line) continue;
-              try {
-                const obj = JSON.parse(line);
-                if (obj.cwd) {
-                  projectPath = obj.cwd;
-                  break;
-                }
-                // Fallback: sessions-index.json style entries
-                if (obj.projectPath) {
-                  projectPath = obj.projectPath;
-                  break;
-                }
-              } catch { /* skip malformed lines */ }
-            }
-          } catch { /* skip unreadable files */ }
-        }
+      const entryPath = join(projectsDir, entry);
+      try {
+        const s = await stat(entryPath);
+        if (!s.isDirectory()) continue;
+      } catch {
+        continue;
       }
-      if (latestMtime > 0) lastActive = new Date(latestMtime).toISOString();
-    } catch { /* skip */ }
 
-    // Last resort: decode folder name (lossy for paths with hyphens)
-    if (!projectPath) {
-      projectPath = decodeFolderName(entry);
+      let projectPath: string | null = null;
+      let sessionCount = 0;
+      let lastActive = '';
+
+      // Count session files and extract projectPath from session data.
+      try {
+        const dirFiles = await readdir(entryPath);
+        const sessionFiles = dirFiles.filter(f => f.endsWith(ext));
+        sessionCount = sessionFiles.length;
+
+        let latestMtime = 0;
+        for (const f of sessionFiles) {
+          try {
+            const s = await stat(join(entryPath, f));
+            if (s.mtimeMs > latestMtime) latestMtime = s.mtimeMs;
+          } catch { /* skip */ }
+
+          // Extract real project path from first session file that has a cwd field
+          if (!projectPath && ext === '.jsonl') {
+            try {
+              const raw = await readFile(join(entryPath, f), 'utf-8');
+              const lines = raw.split('\n', 10);
+              for (const line of lines) {
+                if (!line) continue;
+                try {
+                  const obj = JSON.parse(line);
+                  if (obj.cwd) {
+                    projectPath = obj.cwd;
+                    break;
+                  }
+                  if (obj.projectPath) {
+                    projectPath = obj.projectPath;
+                    break;
+                  }
+                } catch { /* skip malformed lines */ }
+              }
+            } catch { /* skip unreadable files */ }
+          }
+        }
+        if (latestMtime > 0) lastActive = new Date(latestMtime).toISOString();
+      } catch { /* skip */ }
+
+      // Last resort: decode folder name using provider (lossy for paths with hyphens)
+      if (!projectPath) {
+        projectPath = provider.decodeFolderName(entry);
+      }
+
+      results.push({ projectPath, sessionCount, lastActive });
     }
-
-    results.push({ projectPath, sessionCount, lastActive });
   }
 
   return results;
@@ -162,8 +152,8 @@ async function scanClaudeProjectEntries(): Promise<ClaudeProjectEntry[]> {
 /**
  * Detect workspaces from ~/.claude/projects/ session indexes.
  */
-async function detectFromClaudeProjects(existingPaths: Set<string>): Promise<DetectedWorkspace[]> {
-  const entries = await scanClaudeProjectEntries();
+async function detectFromCliProjects(existingPaths: Set<string>): Promise<DetectedWorkspace[]> {
+  const entries = await scanCliProjectEntries();
   return entries.map((e) => ({
     path: e.projectPath,
     name: basename(e.projectPath),
@@ -173,20 +163,20 @@ async function detectFromClaudeProjects(existingPaths: Set<string>): Promise<Det
   }));
 }
 
-// Cache for getClaudeStatsMap to avoid filesystem reads on every 5s poll
+// Cache for getCliStatsMap to avoid filesystem reads on every 5s poll
 let _statsCache: Map<string, { sessionCount: number; lastActive: string }> | null = null;
 let _statsCacheTime = 0;
 let _statsCacheKey = '';
 const STATS_CACHE_TTL = 30_000; // 30 seconds
 
 /**
- * Build a map of workspace path to Claude Code session stats.
+ * Build a map of workspace path to AI CLI session stats.
  * Accepts known workspace paths and uses encodeFolderName (lossless) to find
- * the matching Claude projects folder — avoids decodeFolderName which is lossy
+ * the matching CLI projects folder — avoids decodeFolderName which is lossy
  * for paths containing hyphens.
  * Results are cached for 30 seconds to avoid excessive filesystem reads.
  */
-export async function getClaudeStatsMap(
+export async function getCliStatsMap(
   workspacePaths: string[]
 ): Promise<Map<string, { sessionCount: number; lastActive: string }>> {
   const cacheKey = workspacePaths.join('|');
@@ -194,24 +184,36 @@ export async function getClaudeStatsMap(
     return _statsCache;
   }
 
-  const projectsDir = join(homedir(), '.claude', 'projects');
   const result = new Map<string, { sessionCount: number; lastActive: string }>();
 
   for (const wsPath of workspacePaths) {
-    const folderName = encodeFolderName(wsPath);
-    const folderPath = join(projectsDir, folderName);
+    // Check across all providers
+    for (const provider of getAllCliProviders()) {
+      const folderName = provider.encodeFolderName(wsPath);
+      const folderPath = join(homedir(), provider.projectsDir, folderName);
 
-    try {
-      const s = await stat(folderPath);
-      if (!s.isDirectory()) continue;
-    } catch {
-      continue;
-    }
+      try {
+        const s = await stat(folderPath);
+        if (!s.isDirectory()) continue;
+      } catch {
+        continue;
+      }
 
-    const sessions = await scanJsonlSessions(folderPath, wsPath);
-    if (sessions.length > 0) {
-      const lastActive = sessions[0].modified; // already sorted newest-first
-      result.set(normalizePath(wsPath), { sessionCount: sessions.length, lastActive });
+      const sessions = await scanSessionFiles(folderPath, wsPath, provider.sessionFileExt);
+      if (sessions.length > 0) {
+        const key = normalizePath(wsPath);
+        const existing = result.get(key);
+        const lastActive = sessions[0].modified; // already sorted newest-first
+        if (existing) {
+          // Merge counts across providers
+          result.set(key, {
+            sessionCount: existing.sessionCount + sessions.length,
+            lastActive: lastActive > existing.lastActive ? lastActive : existing.lastActive,
+          });
+        } else {
+          result.set(key, { sessionCount: sessions.length, lastActive });
+        }
+      }
     }
   }
 
@@ -222,24 +224,30 @@ export async function getClaudeStatsMap(
 }
 
 /**
- * Get Claude Code conversation entries for a specific workspace path.
- * Always scans .jsonl files directly — sessions-index.json is deprecated since Claude Code v2.1.31
- * and is often stale/incomplete. JSONL scanning is the same approach Claude Code itself uses.
+ * Get AI CLI conversation entries for a specific workspace path.
+ * Always scans .jsonl files directly — sessions-index.json is deprecated since AI CLI v2.1.31
+ * and is often stale/incomplete. JSONL scanning is the same approach AI CLI itself uses.
  */
-export async function getClaudeSessionsForPath(workspacePath: string): Promise<SessionEntry[]> {
-  const folderName = encodeFolderName(workspacePath);
-  const projectDir = join(homedir(), '.claude', 'projects', folderName);
-  return scanJsonlSessions(projectDir, workspacePath);
+export async function getCliSessionsForPath(workspacePath: string): Promise<SessionEntry[]> {
+  const allSessions: SessionEntry[] = [];
+  for (const provider of getAllCliProviders()) {
+    const folderName = provider.encodeFolderName(workspacePath);
+    const projectDir = join(homedir(), provider.projectsDir, folderName);
+    const sessions = await scanSessionFiles(projectDir, workspacePath, provider.sessionFileExt);
+    allSessions.push(...sessions);
+  }
+  // Sort all sessions across providers by modified date descending
+  return allSessions.sort((a, b) => b.modified.localeCompare(a.modified));
 }
 
 /**
- * Parse session info from individual .jsonl files in a project directory.
+ * Parse session info from individual session files in a project directory.
  * Reads the first few lines of each file to extract sessionId, summary, and message count.
  */
-async function scanJsonlSessions(projectDir: string, workspacePath: string): Promise<SessionEntry[]> {
+async function scanSessionFiles(projectDir: string, workspacePath: string, ext = '.jsonl'): Promise<SessionEntry[]> {
   let files: string[];
   try {
-    files = (await readdir(projectDir)).filter(f => f.endsWith('.jsonl'));
+    files = (await readdir(projectDir)).filter(f => f.endsWith(ext));
   } catch {
     return [];
   }
@@ -282,7 +290,7 @@ async function scanJsonlSessions(projectDir: string, workspacePath: string): Pro
         } catch { /* skip malformed lines */ }
       }
 
-      if (!sessionId) sessionId = file.replace('.jsonl', '');
+      if (!sessionId) sessionId = file.replace(ext, '');
       if (!firstPrompt) firstPrompt = 'Untitled conversation';
 
       results.push({
@@ -364,13 +372,13 @@ async function scanDirectory(dir: string, existingPaths: Set<string>, depth = 0)
 }
 
 /**
- * Detect workspaces. Combines Claude projects registry with optional directory scan.
+ * Detect workspaces. Combines CLI projects registry with optional directory scan.
  */
 export async function detectWorkspaces(scanDir?: string): Promise<DetectedWorkspace[]> {
   const existingPaths = getExistingPaths();
 
-  // Always include Claude projects
-  const claudeResults = await detectFromClaudeProjects(existingPaths);
+  // Always include CLI projects
+  const cliResults = await detectFromCliProjects(existingPaths);
 
   // Optionally scan a directory
   let scanResults: DetectedWorkspace[] = [];
@@ -383,8 +391,8 @@ export async function detectWorkspaces(scanDir?: string): Promise<DetectedWorksp
   const seen = new Set<string>();
   const merged: DetectedWorkspace[] = [];
 
-  // Claude projects first (they have session data)
-  for (const ws of claudeResults) {
+  // CLI projects first (they have session data)
+  for (const ws of cliResults) {
     const key = normalizePath(ws.path);
     if (!seen.has(key)) {
       seen.add(key);

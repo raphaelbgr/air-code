@@ -20,6 +20,10 @@ interface CanvasState {
 
   setActiveSession: (id: string | null) => void;
 
+  showSearch: boolean;
+  setShowSearch: (open: boolean) => void;
+  toggleSearch: () => void;
+
   setSaveStatus: (s: SaveStatus, savedAt?: string) => void;
   initCanvasFromData: (workspaces: Workspace[], sessions: Session[], savedLayout?: SavedLayout | null) => void;
   mergeCanvasWithData: (workspaces: Workspace[], sessions: Session[]) => void;
@@ -61,7 +65,7 @@ function sessionDataChanged(existing: SessionNodeData, fresh: SessionNodeData): 
   return s1.id !== s2.id
     || s1.name !== s2.name
     || s1.status !== s2.status
-    || s1.claudeSessionId !== s2.claudeSessionId
+    || s1.cliSessionId !== s2.cliSessionId
     || s1.backend !== s2.backend
     || s1.type !== s2.type
     || existing.workspaceId !== fresh.workspaceId;
@@ -158,7 +162,7 @@ function buildFreshNodes(workspaces: Workspace[], sessions: Session[]): Node<App
         type: 'workspace',
         workspace,
         sessionCount: wsSessions.length,
-        claudeSessionCount: workspace.claudeSessionCount ?? 0,
+        cliSessionCount: workspace.cliSessionCount ?? 0,
         collapsed: false,
       },
       style: { width: Math.max(wsWidth, 400), height: Math.max(wsHeight, 300) },
@@ -239,6 +243,10 @@ export const useCanvasStore = create<CanvasState>()((set, get) => ({
 
   setActiveSession: (id) => set({ activeSessionId: id }),
 
+  showSearch: false,
+  setShowSearch: (open) => set({ showSearch: open }),
+  toggleSearch: () => set((s) => ({ showSearch: !s.showSearch })),
+
   setSaveStatus: (s, savedAt) => set({
     saveStatus: s,
     ...(savedAt ? { lastSavedAt: savedAt } : {}),
@@ -314,18 +322,26 @@ export const useCanvasStore = create<CanvasState>()((set, get) => ({
           ? sessionDataChanged(existing.data as SessionNodeData, fresh.data as SessionNodeData)
           : JSON.stringify(existing.data) !== JSON.stringify(fresh.data);
 
-        // For workspace bubbles, also update style when session count changes
-        // so the bubble grows/shrinks to fit its sessions
+        // For workspace bubbles, update style when session count changes
+        // using Math.max to never shrink below user-resized / expandParent dimensions
         const sessionCountChanged = isWorkspace
           && (existing.data as WorkspaceBubbleData).sessionCount
              !== (fresh.data as WorkspaceBubbleData).sessionCount;
 
         if (dataChanged || sessionCountChanged) {
           changed = true;
+          let mergedStyle = existing.style;
+          if (sessionCountChanged && fresh.style) {
+            const ew = (existing.style?.width as number) || 400;
+            const eh = (existing.style?.height as number) || 300;
+            const fw = (fresh.style.width as number) || 400;
+            const fh = (fresh.style.height as number) || 300;
+            mergedStyle = { width: Math.max(ew, fw), height: Math.max(eh, fh) };
+          }
           merged.push({
             ...existing,
             data: fresh.data,
-            ...(sessionCountChanged ? { style: fresh.style } : {}),
+            ...(sessionCountChanged ? { style: mergedStyle } : {}),
           });
         } else {
           merged.push(existing);

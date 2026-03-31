@@ -1,6 +1,7 @@
 import { memo, useCallback, useState } from 'react';
 import { type NodeProps, NodeResizer } from '@xyflow/react';
 import { Terminal, Sparkles, Circle, Trash2, Monitor, Copy, Check, X, GitFork, RotateCcw } from 'lucide-react';
+import { getCliProvider, DEFAULT_CLI_PROVIDER } from '@air-code/shared';
 import type { SessionNodeData } from '@/types';
 import { useSessionStore } from '@/stores/session.store';
 import { useCanvasStore } from '@/stores/canvas.store';
@@ -55,18 +56,19 @@ export const SessionNode = memo(function SessionNode({ data }: Props) {
   }, [session.tmuxSession]);
 
   const handleFork = useCallback(async () => {
-    if (forking || !session.claudeSessionId) return;
+    if (forking || !session.cliSessionId) return;
     setForking(true);
     try {
       const forked = await api.sessions.create({
         name: `${session.name} (fork)`,
         workspacePath: session.workspacePath,
-        type: 'claude',
+        type: 'cli',
         backend: session.backend,
-        skipPermissions: workspaceSettings?.skipPermissions,
-        claudeArgs: workspaceSettings?.claudeArgs,
-        claudeResumeId: session.claudeSessionId,
+        skipPermissions: workspaceSettings?.skipPermissions?.[session.cliProvider ?? 'claude'] ?? false,
+        cliArgs: workspaceSettings?.cliArgs,
+        cliResumeId: session.cliSessionId,
         forkSession: true,
+        cliProvider: session.cliProvider,
       });
       addSession(forked);
       setActiveSession(forked.id);
@@ -82,7 +84,7 @@ export const SessionNode = memo(function SessionNode({ data }: Props) {
     setReopening(true);
     try {
       const updated = await api.sessions.reopen(session.id, {
-        claudeArgs: workspaceSettings?.claudeArgs,
+        cliArgs: workspaceSettings?.cliArgs,
       });
       if (updated) {
         addSession(updated);
@@ -96,8 +98,10 @@ export const SessionNode = memo(function SessionNode({ data }: Props) {
   }, [session.id, reopening, workspaceSettings, addSession, setActiveSession]);
 
   const isPty = session.backend === 'pty';
-  const isClaude = session.type === 'claude' && !!session.claudeSessionId;
-  const Icon = isClaude ? Sparkles : Terminal;
+  const isRemote = session.backend === 'remote';
+  const isCli = session.type === 'cli' && !!session.cliSessionId;
+  const Icon = isCli ? Sparkles : Terminal;
+  const provider = session.type === 'cli' ? getCliProvider(session.cliProvider ?? DEFAULT_CLI_PROVIDER) : null;
   const isActive = session.status === 'running' || session.status === 'idle';
   const isSelected = activeSessionId === session.id;
 
@@ -137,13 +141,23 @@ export const SessionNode = memo(function SessionNode({ data }: Props) {
       {/* Header — draggable area */}
       <div className="flex items-center gap-2 px-3 py-2 border-b border-border shrink-0">
         <Icon size={14} className="text-text-muted" />
-        {isPty ? (
+        {isRemote ? (
+          <span className="text-[9px] font-mono font-bold px-1 py-0.5 rounded bg-orange-500/20 text-orange-400 shrink-0"
+                title={`Remote terminal on ${session.agentHostname || 'unknown'}`}>
+            REMOTE
+          </span>
+        ) : isPty ? (
           <span className="text-[9px] font-mono font-bold px-1 py-0.5 rounded bg-blue-500/20 text-blue-400 shrink-0">
             PS
           </span>
         ) : (
           <span className="text-[9px] font-mono font-bold px-1 py-0.5 rounded bg-green-500/20 text-green-400 shrink-0">
             tmux
+          </span>
+        )}
+        {provider && provider.id !== 'claude' && (
+          <span className="text-[9px] font-mono font-bold px-1 py-0.5 rounded bg-purple-500/20 text-purple-400 shrink-0">
+            {provider.displayName}
           </span>
         )}
         <span className="text-sm font-medium text-text-primary truncate flex-1">
@@ -162,12 +176,12 @@ export const SessionNode = memo(function SessionNode({ data }: Props) {
               onClick={handleReopen}
               disabled={reopening}
               className="p-1 rounded text-blue-400 hover:text-blue-300 transition-colors disabled:opacity-50"
-              title={session.claudeSessionId ? `Reopen: claude --resume ${session.claudeSessionId}` : 'Reopen terminal'}
+              title={session.cliSessionId && provider ? `Reopen: ${provider.binary} ${provider.resumeFlag} ${session.cliSessionId}` : 'Reopen terminal'}
             >
               <RotateCcw size={12} />
             </button>
           )}
-          {!isPty && (
+          {!isPty && !isRemote && (
             <button
               onClick={() => setShowJoin(!showJoin)}
               className={`p-1 rounded transition-colors ${showJoin ? 'bg-accent/20 text-accent' : 'text-text-muted hover:text-text-primary'}`}
@@ -176,12 +190,12 @@ export const SessionNode = memo(function SessionNode({ data }: Props) {
               <Monitor size={12} />
             </button>
           )}
-          {isClaude && (
+          {isCli && !isRemote && provider?.supportsFork && (
             <button
               onClick={handleFork}
               disabled={forking}
               className="p-1 rounded text-text-muted hover:text-text-primary transition-colors disabled:opacity-50"
-              title={`Fork: claude --resume ${session.claudeSessionId} --fork-session${workspaceSettings?.skipPermissions ? ' --dangerously-skip-permissions' : ''}${workspaceSettings?.claudeArgs ? ` ${workspaceSettings.claudeArgs}` : ''}`}
+              title={`Fork: ${provider.binary} ${provider.resumeFlag} ${session.cliSessionId} ${provider.forkFlag}${workspaceSettings?.skipPermissions && provider.skipPermissionsFlag ? ` ${provider.skipPermissionsFlag}` : ''}${workspaceSettings?.cliArgs ? ` ${workspaceSettings.cliArgs}` : ''}`}
             >
               <GitFork size={12} />
             </button>
@@ -284,8 +298,8 @@ export const SessionNode = memo(function SessionNode({ data }: Props) {
         )}
       </div>
 
-      {/* PTY Claude warning */}
-      {isPty && session.type === 'claude' && isActive && (
+      {/* PTY CLI warning */}
+      {isPty && session.type === 'cli' && isActive && (
         <div className="px-2 py-1 text-[9px] text-amber-400/70 bg-amber-500/5 border-t border-amber-500/10 shrink-0">
           Don't use /resume here — open a new session from the launcher instead.
         </div>

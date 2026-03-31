@@ -3,7 +3,7 @@ import { readdir } from 'node:fs/promises';
 import { resolve, dirname, parse as parsePath } from 'node:path';
 import { homedir } from 'node:os';
 import { execFileSync } from 'node:child_process';
-import type { ApiResponse, BrowseResult, BrowseItem } from '@claude-air/shared';
+import type { ApiResponse, BrowseResult, BrowseItem } from '@air-code/shared';
 
 const SKIP = new Set([
   'node_modules', '$RECYCLE.BIN', 'System Volume Information',

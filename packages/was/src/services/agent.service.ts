@@ -5,11 +5,11 @@ import { SmsProxy } from './sms-proxy.js';
 
 const log = pino({ name: 'agent' });
 
-// Tool definitions for Claude function calling
+// Tool definitions for AI function calling
 const TOOLS: Anthropic.Tool[] = [
   {
     name: 'list_sessions',
-    description: 'List all Claude Code sessions with their current status, workspace path, and metadata.',
+    description: 'List all AI CLI sessions with their current status, workspace path, and metadata.',
     input_schema: {
       type: 'object' as const,
       properties: {},
@@ -29,7 +29,7 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: 'create_session',
-    description: 'Create a new Claude Code session in a workspace directory. This spawns a new tmux session running Claude Code CLI.',
+    description: 'Create a new AI CLI session in a workspace directory. This spawns a new tmux session running the AI CLI.',
     input_schema: {
       type: 'object' as const,
       properties: {
@@ -42,7 +42,7 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: 'send_to_session',
-    description: 'Send text or keystrokes to a running session terminal. Use this to type commands or interact with Claude Code.',
+    description: 'Send text or keystrokes to a running session terminal. Use this to type commands or interact with AI CLI.',
     input_schema: {
       type: 'object' as const,
       properties: {
@@ -66,7 +66,7 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: 'kill_session',
-    description: 'Kill/stop a running session. This terminates the tmux session and Claude Code process.',
+    description: 'Kill/stop a running session. This terminates the tmux session and AI CLI process.',
     input_schema: {
       type: 'object' as const,
       properties: {
@@ -107,7 +107,7 @@ export class AgentService {
   }
 
   /**
-   * Execute a multi-turn tool-use conversation with Claude.
+   * Execute a multi-turn tool-use conversation with the AI.
    */
   async chat(userMessage: string): Promise<AgentResponse> {
     if (!this.client) {
@@ -125,7 +125,7 @@ export class AgentService {
       const response = await this.client.messages.create({
         model: config.aiModel,
         max_tokens: config.aiMaxTokens,
-        system: `You are an AI assistant that helps manage Claude Code sessions. You can list, create, monitor, and interact with running Claude Code terminal sessions. Be concise and helpful.`,
+        system: `You are an AI assistant that helps manage AI CLI sessions. You can list, create, monitor, and interact with running AI CLI terminal sessions. Be concise and helpful.`,
         tools: TOOLS,
         messages,
       });

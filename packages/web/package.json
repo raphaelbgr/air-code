@@ -1,5 +1,5 @@
 {
-  "name": "@claude-air/web",
+  "name": "@air-code/web",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@claude-air/shared": "workspace:*",
+    "@air-code/shared": "workspace:*",
     "@xterm/addon-canvas": "^0.7.0",
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/addon-search": "^0.15.0",

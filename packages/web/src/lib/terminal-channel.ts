@@ -1,4 +1,4 @@
-import type { WsMessage } from '@claude-air/shared';
+import type { WsMessage } from '@air-code/shared';
 
 type DataHandler = (data: string) => void;
 type ConnectionHandler = (connected: boolean) => void;

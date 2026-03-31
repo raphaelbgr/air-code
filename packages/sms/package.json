@@ -1,5 +1,5 @@
 {
-  "name": "@claude-air/sms",
+  "name": "@air-code/sms",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -7,10 +7,12 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
-    "@claude-air/shared": "workspace:*",
+    "@air-code/shared": "workspace:*",
     "better-sqlite3": "^11.7.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",

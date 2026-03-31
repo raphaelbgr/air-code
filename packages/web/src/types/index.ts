@@ -3,31 +3,31 @@ export type {
   SessionType,
   Workspace,
   DetectedWorkspace,
-  ClaudeSession,
+  CliSession,
   User,
   CanvasState,
   PresenceUser,
   AgentMessage,
   AgentToolCall,
   ApiResponse,
-} from '@claude-air/shared';
+} from '@air-code/shared';
 
 // ReactFlow node data types - must satisfy Record<string, unknown>
 export type WorkspaceBubbleData = {
   type: 'workspace';
-  workspace: import('@claude-air/shared').Workspace;
+  workspace: import('@air-code/shared').Workspace;
   sessionCount: number;
-  claudeSessionCount: number;
+  cliSessionCount: number;
   collapsed: boolean;
   [key: string]: unknown;
 };
 
 export type SessionNodeData = {
   type: 'session';
-  session: import('@claude-air/shared').Session;
+  session: import('@air-code/shared').Session;
   workspaceId: string;
-  workspaceSettings?: import('@claude-air/shared').WorkspaceSettings;
-  viewers: import('@claude-air/shared').PresenceUser[];
+  workspaceSettings?: import('@air-code/shared').WorkspaceSettings;
+  viewers: import('@air-code/shared').PresenceUser[];
   [key: string]: unknown;
 };
 

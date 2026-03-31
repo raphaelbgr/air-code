@@ -48,7 +48,7 @@ export class SmsProxy {
     return this.request(`/api/sessions/${encodeURIComponent(id)}`);
   }
 
-  async createSession(body: { name: string; workspacePath: string; type?: string; skipPermissions?: boolean; claudeArgs?: string; claudeResumeId?: string; backend?: string }) {
+  async createSession(body: { name: string; workspacePath: string; type?: string; skipPermissions?: boolean; cliArgs?: string; cliResumeId?: string; forkSession?: boolean; backend?: string; cliProvider?: string }) {
     return this.request('/api/sessions', {
       method: 'POST',
       body: JSON.stringify(body),
@@ -77,7 +77,7 @@ export class SmsProxy {
     return this.request(`/api/sessions/${encodeURIComponent(id)}/reattach`, { method: 'POST' });
   }
 
-  async reopenSession(id: string, body?: { claudeArgs?: string }) {
+  async reopenSession(id: string, body?: { cliArgs?: string }) {
     return this.request(`/api/sessions/${encodeURIComponent(id)}/reopen`, {
       method: 'POST',
       body: JSON.stringify(body || {}),

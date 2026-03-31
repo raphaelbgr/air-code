@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { serverNow } from '@claude-air/shared';
+import { serverNow } from '@air-code/shared';
 import { api } from '@/lib/api';
 import { useCanvasStore, type SavedNodeLayout } from '@/stores/canvas.store';
 

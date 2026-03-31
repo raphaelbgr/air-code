@@ -2,9 +2,9 @@ import { Router, type Response } from 'express';
 import { z } from 'zod';
 import { v4 as uuid } from 'uuid';
 import pino from 'pino';
-import type { ApiResponse, Workspace, WorkspaceSettings, DetectedWorkspace, ClaudeSession, Session } from '@claude-air/shared';
+import type { ApiResponse, Workspace, WorkspaceSettings, DetectedWorkspace, CliSession, Session } from '@air-code/shared';
 import { getDb } from '../db/database.js';
-import { detectWorkspaces, getClaudeStatsMap, getClaudeSessionsForPath } from '../services/workspace-detector.service.js';
+import { detectWorkspaces, getCliStatsMap, getCliSessionsForPath } from '../services/workspace-detector.service.js';
 import { SmsProxy } from '../services/sms-proxy.js';
 import type { AuthenticatedRequest } from '../types.js';
 
@@ -13,8 +13,8 @@ const log = pino({ name: 'workspaces' });
 const COLORS = ['#3b82f6', '#ef4444', '#22c55e', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316'];
 
 const WorkspaceSettingsSchema = z.object({
-  skipPermissions: z.boolean().optional(),
-  claudeArgs: z.string().optional(),
+  skipPermissions: z.record(z.string(), z.boolean()).optional(),
+  cliArgs: z.string().optional(),
 }).optional();
 
 const CreateWorkspaceSchema = z.object({
@@ -47,9 +47,20 @@ interface WorkspaceRow {
 function parseSettings(raw: string | null): WorkspaceSettings | undefined {
   if (!raw) return undefined;
   try {
-    const parsed = JSON.parse(raw) as WorkspaceSettings;
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
     if (Object.keys(parsed).length === 0) return undefined;
-    return parsed;
+    // Migrate old boolean skipPermissions → per-provider record
+    if (typeof parsed.skipPermissions === 'boolean') {
+      parsed.skipPermissions = parsed.skipPermissions ? { claude: true } : {};
+    }
+    // Migrate old geminiSkipPermissions field
+    if (parsed.geminiSkipPermissions != null) {
+      const sp = (parsed.skipPermissions ?? {}) as Record<string, boolean>;
+      sp.gemini = parsed.geminiSkipPermissions as boolean;
+      parsed.skipPermissions = sp;
+      delete parsed.geminiSkipPermissions;
+    }
+    return parsed as WorkspaceSettings;
   } catch {
     return undefined;
   }
@@ -131,7 +142,7 @@ export function createWorkspaceRoutes(smsProxy: SmsProxy): Router {
     res.status(201).json(body);
   });
 
-  // ── List all workspaces (enriched with Claude Code session stats) ──
+  // ── List all workspaces (enriched with AI CLI session stats) ──
   router.get('/', async (_req: AuthenticatedRequest, res: Response) => {
     try {
       const db = getDb();
@@ -139,14 +150,14 @@ export function createWorkspaceRoutes(smsProxy: SmsProxy): Router {
       const workspaces = rows.map(rowToWorkspace);
 
       const paths = workspaces.map(ws => ws.path).filter((p): p is string => !!p);
-      const statsMap = await getClaudeStatsMap(paths);
+      const statsMap = await getCliStatsMap(paths);
       const normalizePath = (p: string) => process.platform === 'win32' ? p.toLowerCase().replace(/\//g, '\\') : p;
       for (const ws of workspaces) {
         if (ws.path) {
           const stats = statsMap.get(normalizePath(ws.path));
           if (stats) {
-            ws.claudeSessionCount = stats.sessionCount;
-            ws.claudeLastActive = stats.lastActive;
+            ws.cliSessionCount = stats.sessionCount;
+            ws.cliLastActive = stats.lastActive;
           }
         }
       }
@@ -200,8 +211,8 @@ export function createWorkspaceRoutes(smsProxy: SmsProxy): Router {
   // ── Patch workspace settings ──
   router.patch('/:id/settings', (req: AuthenticatedRequest, res: Response) => {
     const parsed = z.object({
-      skipPermissions: z.boolean().optional(),
-      claudeArgs: z.string().optional(),
+      skipPermissions: z.record(z.string(), z.boolean()).optional(),
+      cliArgs: z.string().optional(),
     }).safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ ok: false, error: parsed.error.message } satisfies ApiResponse<never>);
@@ -222,8 +233,8 @@ export function createWorkspaceRoutes(smsProxy: SmsProxy): Router {
     res.json(body);
   });
 
-  // ── List Claude Code conversations for a workspace ──
-  router.get('/:id/claude-sessions', async (req: AuthenticatedRequest, res: Response) => {
+  // ── List AI CLI conversations for a workspace ──
+  router.get('/:id/cli-sessions', async (req: AuthenticatedRequest, res: Response) => {
     try {
       const db = getDb();
       const id = paramId(req);
@@ -233,8 +244,8 @@ export function createWorkspaceRoutes(smsProxy: SmsProxy): Router {
         return;
       }
 
-      const entries = await getClaudeSessionsForPath(row.path);
-      const sessions: ClaudeSession[] = entries.map((e) => ({
+      const entries = await getCliSessionsForPath(row.path);
+      const sessions: CliSession[] = entries.map((e) => ({
         sessionId: e.sessionId,
         summary: e.summary || 'Untitled conversation',
         messageCount: e.messageCount,
@@ -243,7 +254,7 @@ export function createWorkspaceRoutes(smsProxy: SmsProxy): Router {
         gitBranch: e.gitBranch || undefined,
       }));
 
-      const body: ApiResponse<ClaudeSession[]> = { ok: true, data: sessions };
+      const body: ApiResponse<CliSession[]> = { ok: true, data: sessions };
       res.json(body);
     } catch (err) {
       res.status(500).json({ ok: false, error: String(err) } satisfies ApiResponse<never>);

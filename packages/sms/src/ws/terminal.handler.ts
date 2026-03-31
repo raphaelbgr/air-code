@@ -2,7 +2,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import type { IncomingMessage } from 'node:http';
 import { v4 as uuid } from 'uuid';
 import pino from 'pino';
-import type { WsMessage } from '@claude-air/shared';
+import type { WsMessage } from '@air-code/shared';
 import { SessionService } from '../services/session.service.js';
 import { MultiplexerRegistry } from '../services/multiplexer.service.js';
 
@@ -13,7 +13,7 @@ export function setupTerminalWebSocket(
   sessionService: SessionService,
   multiplexers: MultiplexerRegistry,
 ): void {
-  wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
+  wss.on('connection', async (ws: WebSocket, req: IncomingMessage) => {
     // Disable Nagle's algorithm — flush keystrokes immediately
     const socket = (ws as any)._socket;
     if (socket?.setNoDelay) socket.setNoDelay(true);
@@ -40,7 +40,7 @@ export function setupTerminalWebSocket(
 
     // Lazy PTY attachment: spawn the PTY only when the first client connects.
     // This avoids spawning 30+ PTY processes simultaneously on server startup.
-    sessionService.ensureAttached(sessionId);
+    await sessionService.ensureAttached(sessionId);
 
     const mux = multiplexers.getOrCreate(sessionId);
     mux.addClient(clientId, ws, isPreview);

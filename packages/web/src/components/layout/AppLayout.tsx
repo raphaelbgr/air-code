@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { ReactFlowProvider } from '@xyflow/react';
 import { CanvasView } from '../canvas/CanvasView';
-import { SearchDialog } from '../canvas/SearchDialog';
 import { AgentPanel } from '../agent/AgentPanel';
 import { MobileListView } from '../mobile/MobileListView';
 import { MobileTerminal } from '../mobile/MobileTerminal';
@@ -43,7 +42,6 @@ export function AppLayout() {
   const [mobileSessionId, setMobileSessionId] = useState<string | null>(null);
   const [showCreateWorkspace, setShowCreateWorkspace] = useState(false);
   const [showCreateSession, setShowCreateSession] = useState(false);
-  const [showSearch, setShowSearch] = useState(false);
 
   // Fetch data on mount (mobile)
   useEffect(() => {
@@ -51,24 +49,6 @@ export function AppLayout() {
     const interval = setInterval(fetchAll, 5000);
     return () => clearInterval(interval);
   }, [fetchAll]);
-
-  const setActiveSession = useCanvasStore((s) => s.setActiveSession);
-
-  // Cmd+K shortcut + Escape to deselect active session
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
-        e.preventDefault();
-        setShowSearch((v) => !v);
-      }
-      if (e.key === 'Escape') {
-        setShowSearch(false);
-        setActiveSession(null);
-      }
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [setActiveSession]);
 
   // Mobile: fullscreen terminal
   if (isMobile && mobileSessionId) {
@@ -109,7 +89,6 @@ export function AppLayout() {
         <div className="flex-1 overflow-hidden">
           <ReactFlowProvider>
             <CanvasView />
-            <SearchDialog open={showSearch} onClose={() => setShowSearch(false)} />
           </ReactFlowProvider>
         </div>
 

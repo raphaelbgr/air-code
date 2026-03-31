@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from 'express';
-import type { HealthResponse } from '@claude-air/shared';
-import { VERSION } from '@claude-air/shared';
+import type { HealthResponse } from '@air-code/shared';
+import { VERSION } from '@air-code/shared';
 import { SmsProxy } from '../services/sms-proxy.js';
 
 const startTime = Date.now();

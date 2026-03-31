@@ -1,20 +1,23 @@
-import { execFileSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { existsSync, symlinkSync, lstatSync, readdirSync, watch, type FSWatcher, mkdirSync } from 'node:fs';
+import * as fs from 'node:fs/promises';
+import { watch, type FSWatcher } from 'node:fs';
 import { v4 as uuid } from 'uuid';
 import pino from 'pino';
-import type { Session, CreateSessionRequest, SessionBackend } from '@claude-air/shared';
-import { TMUX_SESSION_PREFIX } from '@claude-air/shared';
+import type { Session, CreateSessionRequest, SessionBackend, CliProviderId } from '@air-code/shared';
+import { TMUX_SESSION_PREFIX, getCliProvider, getAllCliProviders, DEFAULT_CLI_PROVIDER } from '@air-code/shared';
 import { getDb } from '../db/index.js';
+import type { IControlMode } from './control-mode.interface.js';
 import { TmuxControlMode } from './tmux-control.service.js';
 import { MockTmuxControlMode } from './mock-tmux.service.js';
 import { PtyDirectMode } from './pty-direct.service.js';
+import { RemoteAgentMode } from './remote-agent.service.js';
 import { MultiplexerRegistry } from './multiplexer.service.js';
 
+const execFileAsync = promisify(execFile);
 const log = pino({ name: 'session' });
-
-type ControlMode = TmuxControlMode | MockTmuxControlMode | PtyDirectMode;
 
 interface SessionRow {
   id: string;
@@ -24,8 +27,10 @@ interface SessionRow {
   status: string;
   type: string | null;
   skip_permissions: number;
-  claude_session_id: string | null;
+  cli_session_id: string | null;
   backend: string | null;
+  agent_hostname: string | null;
+  cli_provider: string | null;
   created_at: string;
   last_activity: string;
 }
@@ -37,10 +42,12 @@ function rowToSession(row: SessionRow): Session {
     tmuxSession: row.tmux_session,
     workspacePath: row.workspace_path,
     status: row.status as Session['status'],
-    type: (row.type as Session['type']) || 'claude',
+    type: (row.type as Session['type']) || 'cli',
     skipPermissions: row.skip_permissions === 1,
-    claudeSessionId: row.claude_session_id ?? undefined,
+    cliSessionId: row.cli_session_id ?? undefined,
     backend: (row.backend as SessionBackend) || 'tmux',
+    cliProvider: (row.cli_provider as CliProviderId) || DEFAULT_CLI_PROVIDER,
+    agentHostname: row.agent_hostname ?? undefined,
     createdAt: row.created_at,
     lastActivity: row.last_activity,
   };
@@ -73,7 +80,7 @@ function fromWslPath(wslPath: string): string {
 }
 
 /**
- * Encode a Windows path to Claude Code's project folder name.
+ * Encode a Windows path to AI CLI's project folder name.
  * F:\Raphael\Backups → F--Raphael-Backups
  */
 function encodeWindowsFolderName(winPath: string): string {
@@ -83,9 +90,9 @@ function encodeWindowsFolderName(winPath: string): string {
 }
 
 /**
- * Encode a WSL path to Claude Code's project folder name.
+ * Encode a WSL path to AI CLI's project folder name.
  * /mnt/f/Raphael/Backups → -mnt-f-Raphael-Backups
- * Claude Code on Linux replaces all / with - in the cwd.
+ * AI CLI on Linux replaces all / with - in the cwd.
  */
 function encodeWslFolderName(wslPath: string): string {
   return wslPath.replace(/\//g, '-');
@@ -93,55 +100,67 @@ function encodeWslFolderName(wslPath: string): string {
 
 /**
  * Ensure the WSL-encoded project folder exists as a symlink to the Windows-encoded one.
- * Claude Code in WSL encodes /mnt/f/... differently than Windows encodes F:\...
- * Without this, --resume can't find sessions created by Windows-native Claude Code.
+ * AI CLI in WSL encodes /mnt/f/... differently than Windows encodes F:\...
+ * Without this, --resume can't find sessions created by Windows-native AI CLI.
  */
-function ensureProjectSymlink(workspacePath: string): void {
-  const winFolder = encodeWindowsFolderName(workspacePath);
+async function ensureProjectSymlink(workspacePath: string, provider: import('@air-code/shared').CliProvider): Promise<void> {
+  const winFolder = provider.encodeFolderName(workspacePath);
   const wslFolder = encodeWslFolderName(toWslPath(workspacePath));
   if (winFolder === wslFolder) return;
 
-  const projectsDir = join(homedir(), '.claude', 'projects');
+  const projectsDir = join(homedir(), provider.projectsDir);
   const winTarget = join(projectsDir, winFolder);
   const wslLink = join(projectsDir, wslFolder);
 
   // Only create if the Windows folder exists and the WSL link doesn't
-  if (!existsSync(winTarget)) return;
+  const winTargetExists = await fs.access(winTarget).then(() => true).catch(() => false);
+  if (!winTargetExists) return;
   try {
-    if (lstatSync(wslLink).isSymbolicLink()) return; // already linked
+    const stat = await fs.lstat(wslLink);
+    if (stat.isSymbolicLink()) return; // already linked
     return; // exists as a real directory — don't touch
   } catch {
     // Doesn't exist — create the symlink
   }
 
   try {
-    symlinkSync(winTarget, wslLink, 'junction');
+    await fs.symlink(winTarget, wslLink, 'junction');
     log.info({ winFolder, wslFolder }, 'created project symlink for WSL path');
   } catch (err) {
     log.warn({ err, winFolder, wslFolder }, 'failed to create project symlink');
   }
 }
 
-function tryTmux(...args: string[]): string {
+async function tryTmux(...args: string[]): Promise<string> {
   if (IS_WINDOWS) {
     // Use bash -c to preserve tmux format strings like #{session_name}.
     // wsl.exe's default shell layer strips # characters, breaking -F arguments.
     const escaped = args.map(a => a.replace(/'/g, "'\\''"));
     const cmd = `tmux ${escaped.map(a => `'${a}'`).join(' ')}`;
-    return execFileSync('wsl', ['bash', '-c', cmd], { stdio: 'pipe' }).toString();
+    const { stdout } = await execFileAsync('wsl', ['bash', '-c', cmd]);
+    return stdout;
   }
-  return execFileSync('tmux', args, { stdio: 'pipe' }).toString();
+  const { stdout } = await execFileAsync('tmux', args);
+  return stdout;
 }
 
 export class SessionService {
-  private controllers: Map<string, ControlMode> = new Map();
+  private controllers: Map<string, IControlMode> = new Map();
   private sessionWatchers: Map<string, FSWatcher> = new Map();
   private multiplexers: MultiplexerRegistry;
   private mockMode: boolean;
 
   constructor(multiplexers: MultiplexerRegistry) {
     this.multiplexers = multiplexers;
-    this.mockMode = !this.checkTmux();
+    this.mockMode = true; // default until init() runs
+  }
+
+  /**
+   * Async initialization — must be called after construction.
+   * Sets mock mode based on tmux availability.
+   */
+  async init(): Promise<void> {
+    this.mockMode = !(await this.checkTmux());
     if (this.mockMode) {
       log.warn('tmux not found - running in MOCK mode. Sessions will simulate terminal output.');
     }
@@ -150,13 +169,30 @@ export class SessionService {
   /**
    * Check if tmux is available.
    */
-  checkTmux(): boolean {
+  async checkTmux(): Promise<boolean> {
     try {
-      tryTmux('-V');
+      await tryTmux('-V');
       return true;
     } catch {
       return false;
     }
+  }
+
+  /**
+   * Check which CLI providers are available on PATH and log results.
+   */
+  async checkCliProviders(): Promise<Record<string, boolean>> {
+    const results: Record<string, boolean> = {};
+    for (const provider of getAllCliProviders()) {
+      try {
+        await execFileAsync(IS_WINDOWS ? 'where.exe' : 'which', [provider.binary]);
+        results[provider.id] = true;
+      } catch {
+        results[provider.id] = false;
+        log.warn({ binary: provider.binary }, `${provider.displayName} CLI not found on PATH`);
+      }
+    }
+    return results;
   }
 
   get isMockMode(): boolean {
@@ -164,9 +200,9 @@ export class SessionService {
   }
 
   /**
-   * Create a new Claude Code session.
+   * Create a new AI CLI session.
    * In mock mode: no real tmux, just a simulated terminal.
-   * In real mode: creates a tmux session running Claude Code CLI.
+   * In real mode: creates a tmux session running AI CLI CLI.
    */
   async create(req: CreateSessionRequest): Promise<Session> {
     const db = getDb();
@@ -178,18 +214,19 @@ export class SessionService {
 
     if (backend === 'pty') {
       // Direct PTY — native PowerShell (or bash on Linux), no tmux
-      const sessionType = req.type || 'claude';
-      const initialClaudeId = req.claudeResumeId || null;
+      const sessionType = req.type || 'cli';
+      const initialCliId = req.cliResumeId || null;
+      const cliProviderVal = req.cliProvider || DEFAULT_CLI_PROVIDER;
       db.prepare(`
-        INSERT INTO sessions (id, name, tmux_session, workspace_path, status, type, skip_permissions, claude_session_id, backend)
-        VALUES (?, ?, ?, ?, 'running', ?, ?, ?, 'pty')
-      `).run(id, req.name, tmuxName, req.workspacePath, sessionType, req.skipPermissions ? 1 : 0, initialClaudeId);
+        INSERT INTO sessions (id, name, tmux_session, workspace_path, status, type, skip_permissions, cli_session_id, backend, cli_provider)
+        VALUES (?, ?, ?, ?, 'running', ?, ?, ?, 'pty', ?)
+      `).run(id, req.name, tmuxName, req.workspacePath, sessionType, req.skipPermissions ? 1 : 0, initialCliId, cliProviderVal);
 
       this.attachPtyDirect(id, req.workspacePath, req);
 
       // Watch for session file on new sessions or forks (fork creates a new session ID)
-      if (sessionType === 'claude' && (!initialClaudeId || req.forkSession)) {
-        this.watchForClaudeSession(id, req.workspacePath);
+      if (sessionType === 'cli' && (!initialCliId || req.forkSession)) {
+        this.watchForCliSession(id, req.workspacePath, cliProviderVal);
       }
 
       const row = db.prepare('SELECT * FROM sessions WHERE id = ?').get(id) as SessionRow;
@@ -201,54 +238,54 @@ export class SessionService {
     if (!this.mockMode) {
       const startDir = IS_WINDOWS ? toWslPath(req.workspacePath) : req.workspacePath;
       try {
-        tryTmux('new-session', '-d', '-s', tmuxName, '-c', startDir, '-x', '80', '-y', '24');
-        try { tryTmux('set-option', '-t', tmuxName, 'status', 'off'); } catch { /* ignore */ }
+        await tryTmux('new-session', '-d', '-s', tmuxName, '-c', startDir, '-x', '80', '-y', '24');
+        try { await tryTmux('set-option', '-t', tmuxName, 'status', 'off'); } catch { /* ignore */ }
       } catch (err) {
         log.error({ err, tmuxName }, 'failed to create tmux session');
         throw new Error(`Failed to create tmux session: ${err}`);
       }
 
       if (req.type !== 'shell') {
-        let claudeCmd = 'claude';
-        if (req.claudeResumeId) {
-          claudeCmd += ` --resume ${req.claudeResumeId}`;
-          if (req.forkSession) claudeCmd += ' --fork-session';
-        }
-        if (req.skipPermissions) claudeCmd += ' --dangerously-skip-permissions';
-        if (req.claudeArgs) claudeCmd += ` ${req.claudeArgs}`;
+        const provider = getCliProvider(req.cliProvider || DEFAULT_CLI_PROVIDER);
+        const cliCmd = provider.buildCommand({
+          resumeId: req.cliResumeId,
+          forkSession: req.forkSession,
+          skipPermissions: req.skipPermissions,
+          extraArgs: req.cliArgs,
+          wslHome: IS_WINDOWS ? toWslPath(homedir()) : undefined,
+        });
 
         if (IS_WINDOWS) {
-          const wslHome = toWslPath(homedir());
-          claudeCmd = `HOME="${wslHome}" ${claudeCmd}`;
-          ensureProjectSymlink(req.workspacePath);
+          await ensureProjectSymlink(req.workspacePath, provider);
         }
 
         try {
-          tryTmux('send-keys', '-t', tmuxName, claudeCmd, 'Enter');
+          await tryTmux('send-keys', '-t', tmuxName, cliCmd, 'Enter');
         } catch (err) {
-          try { tryTmux('kill-session', '-t', tmuxName); } catch { /* ignore */ }
-          throw new Error(`Failed to start Claude Code: ${err}`);
+          try { await tryTmux('kill-session', '-t', tmuxName); } catch { /* ignore */ }
+          throw new Error(`Failed to start AI CLI: ${err}`);
         }
       } else {
         const startDir2 = IS_WINDOWS ? toWslPath(req.workspacePath) : req.workspacePath;
         try {
-          tryTmux('send-keys', '-t', tmuxName, `cd "${startDir2}"`, 'Enter');
+          await tryTmux('send-keys', '-t', tmuxName, `cd "${startDir2}"`, 'Enter');
         } catch { /* non-fatal */ }
       }
     }
 
-    const sessionType = req.type || 'claude';
-    const initialClaudeId = req.claudeResumeId || null;
+    const sessionType = req.type || 'cli';
+    const initialCliId = req.cliResumeId || null;
+    const cliProviderVal = req.cliProvider || DEFAULT_CLI_PROVIDER;
     db.prepare(`
-      INSERT INTO sessions (id, name, tmux_session, workspace_path, status, type, skip_permissions, claude_session_id, backend)
-      VALUES (?, ?, ?, ?, 'running', ?, ?, ?, 'tmux')
-    `).run(id, req.name, tmuxName, req.workspacePath, sessionType, req.skipPermissions ? 1 : 0, initialClaudeId);
+      INSERT INTO sessions (id, name, tmux_session, workspace_path, status, type, skip_permissions, cli_session_id, backend, cli_provider)
+      VALUES (?, ?, ?, ?, 'running', ?, ?, ?, 'tmux', ?)
+    `).run(id, req.name, tmuxName, req.workspacePath, sessionType, req.skipPermissions ? 1 : 0, initialCliId, cliProviderVal);
 
     this.attachControlMode(id, tmuxName);
 
-    // Watch for Claude session ID on new sessions or forks (fork creates a new session ID)
-    if (sessionType === 'claude' && (!initialClaudeId || req.forkSession)) {
-      this.watchForClaudeSession(id, req.workspacePath);
+    // Watch for CLI session ID on new sessions or forks (fork creates a new session ID)
+    if (sessionType === 'cli' && (!initialCliId || req.forkSession)) {
+      this.watchForCliSession(id, req.workspacePath, cliProviderVal);
     }
 
     const row = db.prepare('SELECT * FROM sessions WHERE id = ?').get(id) as SessionRow;
@@ -257,7 +294,7 @@ export class SessionService {
   }
 
   /**
-   * Spawn a direct PTY (native PowerShell) and optionally launch Claude Code inside it.
+   * Spawn a direct PTY (native PowerShell) and optionally launch AI CLI inside it.
    */
   private attachPtyDirect(sessionId: string, cwd: string, req?: CreateSessionRequest): void {
     const ctrl = new PtyDirectMode();
@@ -282,21 +319,67 @@ export class SessionService {
 
     ctrl.attach(cwd);
 
-    // For Claude sessions, type the claude command into the shell
+    // For CLI sessions, type the CLI command into the shell
     if (req && req.type !== 'shell') {
-      let claudeCmd = 'claude';
-      if (req.claudeResumeId) {
-        claudeCmd += ` --resume ${req.claudeResumeId}`;
-        if (req.forkSession) claudeCmd += ' --fork-session';
-      }
-      if (req.skipPermissions) claudeCmd += ' --dangerously-skip-permissions';
-      if (req.claudeArgs) claudeCmd += ` ${req.claudeArgs}`;
+      const provider = getCliProvider(req.cliProvider || DEFAULT_CLI_PROVIDER);
+      const cliCmd = provider.buildCommand({
+        resumeId: req.cliResumeId,
+        forkSession: req.forkSession,
+        skipPermissions: req.skipPermissions,
+        extraArgs: req.cliArgs,
+      });
 
       // Small delay to let the shell prompt initialize
       setTimeout(() => {
-        ctrl.sendKeys('', claudeCmd + '\r');
+        ctrl.sendKeys('', cliCmd + '\r');
       }, 500);
     }
+  }
+
+  /**
+   * Create a remote terminal session (agent-initiated).
+   */
+  createRemote(info: { hostname: string; shell: string }): Session {
+    const db = getDb();
+    const id = uuid();
+    const name = `${info.hostname} (${info.shell})`;
+    const placeholder = `remote-${id.substring(0, 8)}`;
+
+    db.prepare(`
+      INSERT INTO sessions (id, name, tmux_session, workspace_path, status, type, skip_permissions, backend, agent_hostname)
+      VALUES (?, ?, ?, '', 'running', 'shell', 0, 'remote', ?)
+    `).run(id, name, placeholder, info.hostname);
+
+    const row = db.prepare('SELECT * FROM sessions WHERE id = ?').get(id) as SessionRow;
+    log.info({ id, hostname: info.hostname, shell: info.shell }, 'remote session created');
+    return rowToSession(row);
+  }
+
+  /**
+   * Attach a remote agent WebSocket to a session.
+   */
+  attachRemoteAgent(sessionId: string, ws: import('ws').WebSocket): void {
+    const ctrl = new RemoteAgentMode();
+    this.controllers.set(sessionId, ctrl);
+
+    const mux = this.multiplexers.getOrCreate(sessionId);
+
+    ctrl.on('output', (_paneId: string, data: string) => {
+      mux.broadcast(data);
+      this.updateActivity(sessionId);
+    });
+
+    ctrl.on('detached', () => {
+      log.info({ sessionId }, 'remote agent detached');
+      this.controllers.delete(sessionId);
+      this.updateStatus(sessionId, 'stopped');
+    });
+
+    ctrl.on('error', (err: Error) => {
+      log.error({ err, sessionId }, 'remote agent error');
+    });
+
+    ctrl.attach(ws);
   }
 
   /**
@@ -304,31 +387,35 @@ export class SessionService {
    * Snapshot existing files first, then wait for a new one to appear.
    * Event-driven — no race condition, no polling.
    */
-  private watchForClaudeSession(sessionId: string, workspacePath: string): void {
+  private async watchForCliSession(sessionId: string, workspacePath: string, cliProviderId?: CliProviderId): Promise<void> {
     try {
-      const projectFolder = encodeWindowsFolderName(workspacePath);
-      const projectDir = join(homedir(), '.claude', 'projects', projectFolder);
+      const provider = getCliProvider(cliProviderId || DEFAULT_CLI_PROVIDER);
+      const projectFolder = provider.encodeFolderName(workspacePath);
+      const projectDir = join(homedir(), provider.projectsDir, projectFolder);
+      const ext = provider.sessionFileExt;
 
-      // Ensure the directory exists (Claude may not have created it yet)
-      if (!existsSync(projectDir)) {
-        mkdirSync(projectDir, { recursive: true });
+      // Ensure the directory exists (The CLI may not have created it yet)
+      const dirExists = await fs.access(projectDir).then(() => true).catch(() => false);
+      if (!dirExists) {
+        await fs.mkdir(projectDir, { recursive: true });
       }
 
-      // Snapshot existing .jsonl files so we can detect the new one
+      // Snapshot existing session files so we can detect the new one
+      const files = await fs.readdir(projectDir);
       const existing = new Set(
-        readdirSync(projectDir).filter(f => f.endsWith('.jsonl'))
+        files.filter(f => f.endsWith(ext))
       );
 
       const watcher = watch(projectDir, (eventType, filename) => {
-        if (!filename || !filename.endsWith('.jsonl')) return;
+        if (!filename || !filename.endsWith(ext)) return;
         if (existing.has(filename)) return;
 
-        // New .jsonl file — this is the Claude session ID
-        const claudeSessionId = filename.replace('.jsonl', '');
+        // New session file — this is the CLI session ID
+        const cliSessionId = filename.replace(ext, '');
         const db = getDb();
-        db.prepare('UPDATE sessions SET claude_session_id = ? WHERE id = ?')
-          .run(claudeSessionId, sessionId);
-        log.info({ sessionId, claudeSessionId }, 'detected Claude session ID via fs.watch');
+        db.prepare('UPDATE sessions SET cli_session_id = ? WHERE id = ?')
+          .run(cliSessionId, sessionId);
+        log.info({ sessionId, cliSessionId }, 'detected CLI session ID via fs.watch');
 
         // Clean up watcher
         watcher.close();
@@ -348,16 +435,16 @@ export class SessionService {
         if (this.sessionWatchers.has(sessionId)) {
           watcher.close();
           this.sessionWatchers.delete(sessionId);
-          log.warn({ sessionId }, 'Claude session ID detection timed out');
+          log.warn({ sessionId }, 'CLI session ID detection timed out');
         }
       }, 60000);
     } catch (err) {
-      log.warn({ err, sessionId }, 'failed to set up fs.watch for Claude session detection');
+      log.warn({ err, sessionId }, 'failed to set up fs.watch for CLI session detection');
     }
   }
 
   private attachControlMode(sessionId: string, tmuxName: string): void {
-    const ctrl: ControlMode = this.mockMode
+    const ctrl = this.mockMode
       ? new MockTmuxControlMode()
       : new TmuxControlMode();
 
@@ -387,28 +474,30 @@ export class SessionService {
     }
   }
 
-  list(): Session[] {
+  async list(): Promise<Session[]> {
     const db = getDb();
     const rows = db.prepare('SELECT * FROM sessions ORDER BY created_at DESC').all() as SessionRow[];
 
-    return rows.map((row) => {
+    const sessions: Session[] = [];
+    for (const row of rows) {
       const session = rowToSession(row);
       if (session.status === 'running' || session.status === 'idle') {
-        if (session.backend === 'pty') {
-          // PTY sessions: alive only if controller exists
+        if (session.backend === 'pty' || session.backend === 'remote') {
+          // PTY/Remote sessions: alive only if controller exists
           if (!this.controllers.has(session.id)) {
             this.updateStatus(session.id, 'stopped');
             session.status = 'stopped';
           }
         } else if (!this.mockMode) {
-          if (!this.isTmuxSessionAlive(session.tmuxSession)) {
+          if (!(await this.isTmuxSessionAlive(session.tmuxSession))) {
             this.updateStatus(session.id, 'stopped');
             session.status = 'stopped';
           }
         }
       }
-      return session;
-    });
+      sessions.push(session);
+    }
+    return sessions;
   }
 
   get(id: string): Session | null {
@@ -422,8 +511,8 @@ export class SessionService {
     const session = this.get(id);
     if (!session) throw new Error('Session not found');
 
-    if (session.backend === 'pty') {
-      // Direct PTY — just kill the controller
+    if (session.backend === 'pty' || session.backend === 'remote') {
+      // Direct PTY or remote — just kill the controller
       const ctrl = this.controllers.get(id);
       if (ctrl) {
         ctrl.detach();
@@ -433,7 +522,7 @@ export class SessionService {
       // tmux — Kill tmux FIRST so the PTY exits naturally (avoids ConPTY AttachConsole error on Windows)
       if (!this.mockMode) {
         try {
-          tryTmux('kill-session', '-t', session.tmuxSession);
+          await tryTmux('kill-session', '-t', session.tmuxSession);
         } catch { /* Session may already be dead */ }
       }
 
@@ -465,8 +554,8 @@ export class SessionService {
     const ctrl = this.controllers.get(id);
     if (ctrl?.attached) {
       await ctrl.sendKeys(session.tmuxSession, keys);
-    } else if (session.backend !== 'pty' && !this.mockMode) {
-      tryTmux('send-keys', '-t', session.tmuxSession, keys);
+    } else if (session.backend !== 'pty' && session.backend !== 'remote' && !this.mockMode) {
+      await tryTmux('send-keys', '-t', session.tmuxSession, keys);
     }
     this.updateActivity(id);
   }
@@ -482,7 +571,7 @@ export class SessionService {
 
     if (!this.mockMode) {
       try {
-        return tryTmux('capture-pane', '-t', session.tmuxSession, '-p', '-S', `-${lines}`);
+        return await tryTmux('capture-pane', '-t', session.tmuxSession, '-p', '-S', `-${lines}`);
       } catch {
         return '';
       }
@@ -494,7 +583,7 @@ export class SessionService {
   /**
    * Re-attach control mode to a session whose streaming may have died.
    */
-  reattach(id: string): Session | null {
+  async reattach(id: string): Promise<Session | null> {
     const session = this.get(id);
     if (!session) return null;
 
@@ -512,17 +601,18 @@ export class SessionService {
         workspacePath: session.workspacePath,
         type: session.type,
         skipPermissions: session.skipPermissions,
-        claudeResumeId: session.claudeSessionId,
+        cliResumeId: session.cliSessionId,
+        cliProvider: session.cliProvider,
       };
       this.attachPtyDirect(id, session.workspacePath, req);
-      log.info({ id, claudeResumeId: session.claudeSessionId }, 'reattached PTY session');
+      log.info({ id, cliResumeId: session.cliSessionId }, 'reattached PTY session');
       return this.get(id);
     }
 
     if (this.mockMode) return session;
 
     // Check tmux session is alive
-    if (!this.isTmuxSessionAlive(session.tmuxSession)) {
+    if (!(await this.isTmuxSessionAlive(session.tmuxSession))) {
       this.updateStatus(id, 'stopped');
       return this.get(id);
     }
@@ -551,8 +641,8 @@ export class SessionService {
    * PTY attachment is lazy — triggered by the first WebSocket client.
    * This avoids spawning 30+ PTY processes simultaneously.
    */
-  reattachAll(): void {
-    const sessions = this.list().filter((s) => s.status === 'running' || s.status === 'idle');
+  async reattachAll(): Promise<void> {
+    const sessions = (await this.list()).filter((s) => s.status === 'running' || s.status === 'idle');
     log.info({ count: sessions.length, mock: this.mockMode }, 'sessions available for lazy reattach');
   }
 
@@ -561,11 +651,16 @@ export class SessionService {
    * Called when the first WebSocket client connects to a terminal.
    * No-op if already attached or session is not running.
    */
-  ensureAttached(sessionId: string): void {
+  async ensureAttached(sessionId: string): Promise<void> {
     if (this.controllers.has(sessionId)) return;
 
     const session = this.get(sessionId);
     if (!session) return;
+
+    if (session.backend === 'remote') {
+      // Remote sessions reconnect via agent — nothing to do server-side
+      return;
+    }
 
     if (session.backend === 'pty') {
       // PTY reconnect: spawn a new PTY for stopped sessions
@@ -576,10 +671,11 @@ export class SessionService {
           workspacePath: session.workspacePath,
           type: session.type,
           skipPermissions: session.skipPermissions,
-          claudeResumeId: session.claudeSessionId,
+          cliResumeId: session.cliSessionId,
+          cliProvider: session.cliProvider,
         };
         this.attachPtyDirect(sessionId, session.workspacePath, req);
-        log.info({ id: sessionId, claudeResumeId: session.claudeSessionId }, 'reconnected PTY session');
+        log.info({ id: sessionId, cliResumeId: session.cliSessionId }, 'reconnected PTY session');
       }
       return;
     }
@@ -588,7 +684,7 @@ export class SessionService {
     if (this.mockMode) return;
     if (session.status !== 'running' && session.status !== 'idle') return;
 
-    if (!this.isTmuxSessionAlive(session.tmuxSession)) {
+    if (!(await this.isTmuxSessionAlive(session.tmuxSession))) {
       this.updateStatus(sessionId, 'stopped');
       return;
     }
@@ -602,14 +698,14 @@ export class SessionService {
    * - Re-adopt orphan tmux sessions (alive but not in DB) by creating DB records
    * - Remove DB sessions whose tmux is dead
    */
-  cleanupOrphans(): void {
-    // Mark all PTY sessions as stopped — they can't survive SMS restart
+  async cleanupOrphans(): Promise<void> {
+    // Mark all PTY and remote sessions as stopped — they can't survive SMS restart
     const db0 = getDb();
     const ptyMarked = db0.prepare(
-      `UPDATE sessions SET status = 'stopped' WHERE backend = 'pty' AND status IN ('running', 'idle')`
+      `UPDATE sessions SET status = 'stopped' WHERE backend IN ('pty', 'remote') AND status IN ('running', 'idle')`
     ).run();
     if (ptyMarked.changes > 0) {
-      log.info({ count: ptyMarked.changes }, 'marked PTY sessions as stopped (SMS restart)');
+      log.info({ count: ptyMarked.changes }, 'marked PTY/remote sessions as stopped (SMS restart)');
     }
 
     if (this.mockMode) return;
@@ -617,7 +713,7 @@ export class SessionService {
     // 1. Get all alive cca-* tmux sessions
     let aliveSessions: string[];
     try {
-      const output = tryTmux('list-sessions', '-F', '#{session_name}');
+      const output = await tryTmux('list-sessions', '-F', '#{session_name}');
       aliveSessions = output.trim().split('\n')
         .map(s => s.trim())
         .filter(s => s.startsWith(TMUX_SESSION_PREFIX));
@@ -639,15 +735,15 @@ export class SessionService {
         // Query the pane's working directory to determine workspace
         let workspacePath = '';
         try {
-          workspacePath = tryTmux(
+          workspacePath = (await tryTmux(
             'display-message', '-t', tmuxName, '-p', '#{pane_current_path}',
-          ).trim();
+          )).trim();
           // WSL returns /mnt/c/... paths — convert back to Windows C:\...
           if (IS_WINDOWS) workspacePath = fromWslPath(workspacePath);
         } catch { /* fallback to empty */ }
 
         // Ensure tmux status bar is off for recovered sessions
-        try { tryTmux('set-option', '-t', tmuxName, 'status', 'off'); } catch { /* ignore */ }
+        try { await tryTmux('set-option', '-t', tmuxName, 'status', 'off'); } catch { /* ignore */ }
 
         // Derive a session id from the tmux name (cca-<8chars> → use as uuid prefix)
         const shortId = tmuxName.replace(TMUX_SESSION_PREFIX, '');
@@ -688,7 +784,7 @@ export class SessionService {
    * using the original session metadata. Reuses the same DB row ID
    * so the canvas node stays in place.
    */
-  async reopen(id: string, claudeArgs?: string): Promise<Session> {
+  async reopen(id: string, cliArgs?: string): Promise<Session> {
     const db = getDb();
     const row = db.prepare('SELECT * FROM sessions WHERE id = ?').get(id) as SessionRow | undefined;
     if (!row) throw new Error('Session not found');
@@ -706,8 +802,9 @@ export class SessionService {
         workspacePath: cwd,
         type: session.type,
         skipPermissions: session.skipPermissions,
-        claudeResumeId: session.claudeSessionId,
-        claudeArgs,
+        cliResumeId: session.cliSessionId,
+        cliArgs,
+        cliProvider: session.cliProvider,
       };
       this.attachPtyDirect(id, cwd, req);
 
@@ -715,11 +812,11 @@ export class SessionService {
         "UPDATE sessions SET tmux_session = ?, status = 'running', last_activity = datetime('now') WHERE id = ?"
       ).run(newPtyName, id);
 
-      if (session.type === 'claude') {
-        this.watchForClaudeSession(id, cwd);
+      if (session.type === 'cli') {
+        this.watchForCliSession(id, cwd, session.cliProvider);
       }
 
-      log.info({ id, backend: 'pty', claudeResumeId: session.claudeSessionId }, 'reopened PTY session');
+      log.info({ id, backend: 'pty', cliResumeId: session.cliSessionId }, 'reopened PTY session');
       return this.get(id)!;
     }
 
@@ -730,36 +827,35 @@ export class SessionService {
     const startDir = IS_WINDOWS ? toWslPath(cwd) : cwd;
 
     try {
-      tryTmux('new-session', '-d', '-s', newTmuxName, '-c', startDir, '-x', '80', '-y', '24');
-      try { tryTmux('set-option', '-t', newTmuxName, 'status', 'off'); } catch { /* ignore */ }
+      await tryTmux('new-session', '-d', '-s', newTmuxName, '-c', startDir, '-x', '80', '-y', '24');
+      try { await tryTmux('set-option', '-t', newTmuxName, 'status', 'off'); } catch { /* ignore */ }
     } catch (err) {
       throw new Error(`Failed to create tmux session: ${err}`);
     }
 
     if (session.type !== 'shell') {
-      let claudeCmd = 'claude';
-      if (session.claudeSessionId) {
-        claudeCmd += ` --resume ${session.claudeSessionId}`;
-      }
-      if (session.skipPermissions) claudeCmd += ' --dangerously-skip-permissions';
-      if (claudeArgs) claudeCmd += ` ${claudeArgs}`;
+      const provider = getCliProvider(session.cliProvider || DEFAULT_CLI_PROVIDER);
+      const cliCmd = provider.buildCommand({
+        resumeId: session.cliSessionId,
+        skipPermissions: session.skipPermissions,
+        extraArgs: cliArgs,
+        wslHome: IS_WINDOWS ? toWslPath(homedir()) : undefined,
+      });
 
       if (IS_WINDOWS) {
-        const wslHome = toWslPath(homedir());
-        claudeCmd = `HOME="${wslHome}" ${claudeCmd}`;
-        ensureProjectSymlink(cwd);
+        await ensureProjectSymlink(cwd, provider);
       }
 
       try {
-        tryTmux('send-keys', '-t', newTmuxName, claudeCmd, 'Enter');
+        await tryTmux('send-keys', '-t', newTmuxName, cliCmd, 'Enter');
       } catch (err) {
-        try { tryTmux('kill-session', '-t', newTmuxName); } catch { /* ignore */ }
-        throw new Error(`Failed to start Claude Code: ${err}`);
+        try { await tryTmux('kill-session', '-t', newTmuxName); } catch { /* ignore */ }
+        throw new Error(`Failed to start AI CLI: ${err}`);
       }
     } else {
       const shellDir = IS_WINDOWS ? toWslPath(cwd) : cwd;
       try {
-        tryTmux('send-keys', '-t', newTmuxName, `cd "${shellDir}"`, 'Enter');
+        await tryTmux('send-keys', '-t', newTmuxName, `cd "${shellDir}"`, 'Enter');
       } catch { /* non-fatal */ }
     }
 
@@ -769,21 +865,21 @@ export class SessionService {
 
     this.attachControlMode(id, newTmuxName);
 
-    if (session.type === 'claude') {
-      this.watchForClaudeSession(id, cwd);
+    if (session.type === 'cli') {
+      this.watchForCliSession(id, cwd, session.cliProvider);
     }
 
-    log.info({ id, tmuxName: newTmuxName, claudeResumeId: session.claudeSessionId }, 'reopened tmux session');
+    log.info({ id, tmuxName: newTmuxName, cliResumeId: session.cliSessionId }, 'reopened tmux session');
     return this.get(id)!;
   }
 
-  getController(id: string): ControlMode | undefined {
+  getController(id: string): IControlMode | undefined {
     return this.controllers.get(id);
   }
 
-  private isTmuxSessionAlive(tmuxName: string): boolean {
+  private async isTmuxSessionAlive(tmuxName: string): Promise<boolean> {
     try {
-      tryTmux('has-session', '-t', tmuxName);
+      await tryTmux('has-session', '-t', tmuxName);
       return true;
     } catch {
       return false;

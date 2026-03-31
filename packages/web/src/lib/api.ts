@@ -6,12 +6,12 @@ import type {
   Workspace,
   WorkspaceSettings,
   DetectedWorkspace,
-  ClaudeSession,
+  CliSession,
   AuthResponse,
   CanvasState,
   HealthResponse,
   BrowseResult,
-} from '@claude-air/shared';
+} from '@air-code/shared';
 
 const BASE = '/api';
 
@@ -63,7 +63,7 @@ export const api = {
   sessions: {
     list: () => request<Session[]>('/sessions'),
     get: (id: string) => request<Session>(`/sessions/${id}`),
-    create: (body: { name: string; workspacePath: string; workspaceId?: string; type?: SessionType; skipPermissions?: boolean; claudeArgs?: string; claudeResumeId?: string; forkSession?: boolean; backend?: SessionBackend }) =>
+    create: (body: { name: string; workspacePath: string; workspaceId?: string; type?: SessionType; skipPermissions?: boolean; cliArgs?: string; cliResumeId?: string; forkSession?: boolean; backend?: SessionBackend; cliProvider?: string }) =>
       request<Session>('/sessions', { method: 'POST', body: JSON.stringify(body) }),
     kill: (id: string) => request<void>(`/sessions/${id}`, { method: 'DELETE' }),
     rename: (id: string, name: string) =>
@@ -72,7 +72,7 @@ export const api = {
       request<void>(`/sessions/${id}/send`, { method: 'POST', body: JSON.stringify({ keys }) }),
     reattach: (id: string) =>
       request<Session>(`/sessions/${id}/reattach`, { method: 'POST' }),
-    reopen: (id: string, body?: { claudeArgs?: string }) =>
+    reopen: (id: string, body?: { cliArgs?: string }) =>
       request<Session>(`/sessions/${id}/reopen`, {
         method: 'POST',
         body: JSON.stringify(body || {}),
@@ -124,8 +124,8 @@ export const api = {
         method: 'PATCH',
         body: JSON.stringify(settings),
       }),
-    claudeSessions: (id: string) =>
-      request<ClaudeSession[]>(`/workspaces/${id}/claude-sessions`),
+    cliSessions: (id: string) =>
+      request<CliSession[]>(`/workspaces/${id}/cli-sessions`),
   },
 
   // ── Canvas ──

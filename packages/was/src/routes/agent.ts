@@ -1,7 +1,7 @@
 import { Router, type Response } from 'express';
 import { z } from 'zod';
 import pino from 'pino';
-import type { ApiResponse } from '@claude-air/shared';
+import type { ApiResponse } from '@air-code/shared';
 import { AgentService, type AgentResponse } from '../services/agent.service.js';
 import type { AuthenticatedRequest } from '../types.js';
 

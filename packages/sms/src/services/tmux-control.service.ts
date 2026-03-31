@@ -1,6 +1,9 @@
 import { EventEmitter } from 'node:events';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import * as pty from 'node-pty';
 import pino from 'pino';
+import type { IControlMode } from './control-mode.interface.js';
 
 const log = pino({ name: 'tmux-control' });
 const IS_WINDOWS = process.platform === 'win32';
@@ -31,7 +34,7 @@ export interface TmuxControlMode {
  * output goes straight to xterm.js in the browser — no translation needed.
  * Both speak the same language: ANSI escape sequences.
  */
-export class TmuxControlMode extends EventEmitter {
+export class TmuxControlMode extends EventEmitter implements IControlMode {
   private ptyProcess: pty.IPty | null = null;
   private _attached = false;
 
@@ -119,13 +122,14 @@ export class TmuxControlMode extends EventEmitter {
    * This runs a separate one-shot command, not through the PTY.
    */
   async capturePaneContent(sessionName: string, lines = 100): Promise<string> {
-    const { execFileSync } = await import('node:child_process');
+    const execFileAsync = promisify(execFile);
     try {
       const args = IS_WINDOWS
         ? ['tmux', 'capture-pane', '-t', sessionName, '-p', '-S', `-${lines}`]
         : ['capture-pane', '-t', sessionName, '-p', '-S', `-${lines}`];
       const cmd = IS_WINDOWS ? 'wsl' : 'tmux';
-      return execFileSync(cmd, args, { stdio: 'pipe' }).toString();
+      const { stdout } = await execFileAsync(cmd, args);
+      return stdout;
     } catch {
       return '';
     }

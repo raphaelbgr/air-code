@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, type FormEvent } from 'react';
 import { X, Send, Bot } from 'lucide-react';
-import { serverNow } from '@claude-air/shared';
+import { serverNow } from '@air-code/shared';
 import { useAgentStore } from '@/stores/agent.store';
 import type { AgentMessage } from '@/types';
 const uuid = () => crypto.randomUUID();

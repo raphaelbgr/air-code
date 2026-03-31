@@ -7,12 +7,13 @@ const CreateSessionSchema = z.object({
   name: z.string().min(1).max(100),
   workspacePath: z.string().min(1),
   workspaceId: z.string().optional(),
-  type: z.enum(['shell', 'claude']).optional(),
+  type: z.enum(['shell', 'cli']).optional(),
   backend: z.enum(['tmux', 'pty']).optional(),
   skipPermissions: z.boolean().optional().default(false),
-  claudeArgs: z.string().optional(),
-  claudeResumeId: z.string().optional(),
+  cliArgs: z.string().optional(),
+  cliResumeId: z.string().optional(),
   forkSession: z.boolean().optional(),
+  cliProvider: z.enum(['claude', 'gemini']).optional(),
 });
 
 const SendKeysSchema = z.object({

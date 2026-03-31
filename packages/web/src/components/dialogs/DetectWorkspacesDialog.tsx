@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { X, Check, Loader2, Folder, FolderPlus, ChevronRight, Home, HardDrive } from 'lucide-react';
-import { formatDate } from '@claude-air/shared';
-import type { BrowseResult, BrowseItem } from '@claude-air/shared';
+import { formatDate } from '@air-code/shared';
+import type { BrowseResult, BrowseItem } from '@air-code/shared';
 import { api } from '@/lib/api';
 import { useSessionStore } from '@/stores/session.store';
 import type { DetectedWorkspace } from '@/types';
@@ -219,18 +219,18 @@ export function DetectWorkspacesDialog({ onClose }: { onClose: () => void }) {
           )}
         </div>
 
-        {/* ── Detected Claude Projects ── */}
+        {/* ── Detected CLI Projects ── */}
         <div className="flex-1 min-h-0 flex flex-col">
-          <div className="text-xs font-medium text-text-secondary mb-2 uppercase tracking-wider">Claude Projects</div>
+          <div className="text-xs font-medium text-text-secondary mb-2 uppercase tracking-wider">CLI Projects</div>
 
           {scanning ? (
             <div className="flex items-center justify-center gap-2 py-8 text-text-secondary">
               <Loader2 size={18} className="animate-spin" />
-              Scanning Claude projects...
+              Scanning CLI projects...
             </div>
           ) : detected.length === 0 ? (
             <p className="py-4 text-center text-text-muted text-sm">
-              No Claude projects found.
+              No CLI projects found.
             </p>
           ) : (
             <>

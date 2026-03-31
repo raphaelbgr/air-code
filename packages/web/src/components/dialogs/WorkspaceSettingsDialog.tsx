@@ -1,7 +1,8 @@
 import { useState, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
-import type { Workspace, WorkspaceSettings } from '@claude-air/shared';
+import type { Workspace, WorkspaceSettings } from '@air-code/shared';
+import { getAllCliProviders } from '@air-code/shared';
 import { api } from '@/lib/api';
 
 interface Props {
@@ -11,8 +12,13 @@ interface Props {
 }
 
 export function WorkspaceSettingsDialog({ workspace, onClose, onSaved }: Props) {
-  const [skipPermissions, setSkipPermissions] = useState(workspace.settings?.skipPermissions ?? false);
-  const [claudeArgs, setClaudeArgs] = useState(workspace.settings?.claudeArgs ?? '');
+  const [skipPerms, setSkipPerms] = useState<Record<string, boolean>>(() => {
+    const sp = workspace.settings?.skipPermissions ?? {};
+    const init: Record<string, boolean> = {};
+    for (const p of getAllCliProviders()) init[p.id] = sp[p.id] ?? false;
+    return init;
+  });
+  const [cliArgs, setCliArgs] = useState(workspace.settings?.cliArgs ?? '');
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e: FormEvent) => {
@@ -20,8 +26,8 @@ export function WorkspaceSettingsDialog({ workspace, onClose, onSaved }: Props) 
     setLoading(true);
     try {
       const settings: WorkspaceSettings = {
-        skipPermissions,
-        claudeArgs: claudeArgs.trim() || undefined,
+        skipPermissions: skipPerms,
+        cliArgs: cliArgs.trim() || undefined,
       };
       const updated = await api.workspaces.updateSettings(workspace.id, settings);
       onSaved(updated);
@@ -46,25 +52,35 @@ export function WorkspaceSettingsDialog({ workspace, onClose, onSaved }: Props) 
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          <label className="flex items-center gap-2 text-sm text-text-secondary">
-            <input
-              type="checkbox"
-              checked={skipPermissions}
-              onChange={(e) => setSkipPermissions(e.target.checked)}
-              className="rounded border-border"
-            />
-            Skip permissions (--dangerously-skip-permissions)
-          </label>
+          {getAllCliProviders().map((p) => (
+            <div key={p.id}>
+              <div className="text-[10px] text-text-muted uppercase tracking-wider mb-2">
+                {p.displayName}
+              </div>
+              <label className="flex items-center gap-2 text-sm text-text-secondary">
+                <input
+                  type="checkbox"
+                  checked={skipPerms[p.id] ?? false}
+                  onChange={(e) => setSkipPerms((prev) => ({ ...prev, [p.id]: e.target.checked }))}
+                  className="rounded border-border"
+                />
+                Skip permissions
+                {p.skipPermissionsFlag && (
+                  <span className="text-text-muted text-xs">({p.skipPermissionsFlag})</span>
+                )}
+              </label>
+            </div>
+          ))}
 
-          <div>
+          <div className="border-t border-border pt-4">
             <label className="block text-sm text-text-secondary mb-1">
-              Extra Claude args
+              Extra CLI args
             </label>
             <input
               type="text"
               placeholder='e.g. --model sonnet --allowedTools "Edit,Write"'
-              value={claudeArgs}
-              onChange={(e) => setClaudeArgs(e.target.value)}
+              value={cliArgs}
+              onChange={(e) => setCliArgs(e.target.value)}
               className="w-full px-3 py-2 rounded-lg bg-bg-tertiary border border-border text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent text-sm"
             />
           </div>

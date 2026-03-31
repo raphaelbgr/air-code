@@ -1,8 +1,8 @@
 import { Router, type Request, type Response } from 'express';
 import { platform, release, version, hostname } from 'node:os';
 import { readFileSync } from 'node:fs';
-import type { HealthResponse } from '@claude-air/shared';
-import { VERSION } from '@claude-air/shared';
+import type { HealthResponse } from '@air-code/shared';
+import { VERSION } from '@air-code/shared';
 import { SessionService } from '../services/session.service.js';
 
 const startTime = Date.now();
@@ -45,8 +45,8 @@ const hostName = hostname();
 export function createHealthRoutes(sessionService: SessionService): Router {
   const router = Router();
 
-  router.get('/', (_req: Request, res: Response) => {
-    const tmuxOk = sessionService.checkTmux();
+  router.get('/', async (_req: Request, res: Response) => {
+    const tmuxOk = await sessionService.checkTmux();
     const response = {
       status: tmuxOk ? 'ok' : (sessionService.isMockMode ? 'ok' : 'degraded'),
       version: VERSION,

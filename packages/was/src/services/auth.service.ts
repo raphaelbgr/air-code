@@ -2,7 +2,7 @@ import { v4 as uuid } from 'uuid';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import pino from 'pino';
-import type { User, AuthResponse } from '@claude-air/shared';
+import type { User, AuthResponse } from '@air-code/shared';
 import { config } from '../config.js';
 import { getDb } from '../db/database.js';
 import type { JwtPayload } from '../types.js';

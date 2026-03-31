@@ -1,5 +1,5 @@
 {
-  "name": "@claude-air/shared",
+  "name": "@air-code/shared",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -18,7 +18,9 @@
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
-    "dev": "tsc --watch"
+    "dev": "tsc --watch",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "devDependencies": {
     "@types/node": "^25.3.0",

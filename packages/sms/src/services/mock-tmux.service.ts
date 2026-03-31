@@ -1,6 +1,7 @@
 import { EventEmitter } from 'node:events';
 import pino from 'pino';
 import type { PaneInfo } from '../types.js';
+import type { IControlMode } from './control-mode.interface.js';
 
 const log = pino({ name: 'mock-tmux' });
 
@@ -8,7 +9,7 @@ const log = pino({ name: 'mock-tmux' });
  * Mock TmuxControlMode for development on systems without tmux (Windows).
  * Simulates terminal output with periodic fake messages.
  */
-export class MockTmuxControlMode extends EventEmitter {
+export class MockTmuxControlMode extends EventEmitter implements IControlMode {
   private interval: ReturnType<typeof setInterval> | null = null;
   private _attached = false;
   private sessionName = '';
@@ -23,7 +24,7 @@ export class MockTmuxControlMode extends EventEmitter {
 
     // Simulate initial output after a short delay
     setTimeout(() => {
-      this.emit('output', '%0', `\r\n\x1b[1;34m[mock]\x1b[0m Claude Code session "${sessionName}" (mock mode - tmux not available)\r\n`);
+      this.emit('output', '%0', `\r\n\x1b[1;34m[mock]\x1b[0m AI CLI session "${sessionName}" (mock mode - tmux not available)\r\n`);
       this.emit('output', '%0', `\x1b[1;34m[mock]\x1b[0m Type commands below. They will be echoed back.\r\n`);
       this.emit('output', '%0', `\x1b[32m$ \x1b[0m`);
     }, 500);

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Cloud, Loader2, CloudOff, Check } from 'lucide-react';
-import { formatRelative } from '@claude-air/shared';
+import { formatRelative } from '@air-code/shared';
 import { useCanvasStore } from '@/stores/canvas.store';
 
 export function SaveStatusIcon() {

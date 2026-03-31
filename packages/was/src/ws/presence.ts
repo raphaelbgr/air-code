@@ -5,7 +5,7 @@ import {
   PRESENCE_LEAVE,
   PRESENCE_UPDATE,
   PRESENCE_USERS,
-} from '@claude-air/shared';
+} from '@air-code/shared';
 import { AuthService } from '../services/auth.service.js';
 import { PresenceService } from '../services/presence.service.js';
 

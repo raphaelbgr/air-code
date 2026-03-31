@@ -31,11 +31,12 @@ import { createCanvasRoutes } from './routes/canvas.js';
 import { createWorkspaceRoutes } from './routes/workspaces.js';
 import { createHealthRoutes } from './routes/health.js';
 import { createAgentRoutes } from './routes/agent.js';
+import { createClaudeSessionRoutes } from './routes/claude-sessions.js';
 import { AgentService } from './services/agent.service.js';
 import { setupTerminalProxy } from './ws/terminal-proxy.js';
 import { setupTerminalChannel } from './ws/terminal-channel.js';
 import { setupPresence } from './ws/presence.js';
-import { registerInstance, deregisterInstance } from '@claude-air/shared/instance';
+import { registerInstance, deregisterInstance } from '@air-code/shared/instance';
 
 const log = pino({
   name: 'was',
@@ -73,6 +74,7 @@ app.use('/api/sessions', requireAuth, createSessionRoutes(smsProxy));
 app.use('/api/canvas', requireAuth, createCanvasRoutes(canvasService));
 app.use('/api/workspaces', requireAuth, createWorkspaceRoutes(smsProxy));
 app.use('/api/agent', requireAuth, createAgentRoutes(agentService));
+app.use('/api/claude', requireAuth, createClaudeSessionRoutes());
 
 // Serve static frontend in production
 const __dirname = dirname(fileURLToPath(import.meta.url));

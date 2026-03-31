@@ -1,7 +1,7 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import type { IncomingMessage } from 'node:http';
 import pino from 'pino';
-import type { WsMessage } from '@claude-air/shared';
+import type { WsMessage } from '@air-code/shared';
 import { AuthService } from '../services/auth.service.js';
 import { SmsProxy } from '../services/sms-proxy.js';
 
