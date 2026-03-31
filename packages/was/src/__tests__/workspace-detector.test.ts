@@ -4,8 +4,8 @@ import { encodeFolderName } from '../services/workspace-detector.service.js';
 
 describe('workspace-detector provider integration', () => {
   it('encodeFolderName delegates to claude provider', () => {
-    const result = encodeFolderName('C:\\Users\\rbgnr\\git\\Stream-Lens');
-    const expected = getCliProvider('claude').encodeFolderName('C:\\Users\\rbgnr\\git\\Stream-Lens');
+    const result = encodeFolderName('~\\git\\Stream-Lens');
+    const expected = getCliProvider('claude').encodeFolderName('~\\git\\Stream-Lens');
     expect(result).toBe(expected);
     expect(result).toBe('C--Users-rbgnr-git-Stream-Lens');
   });

@@ -7,7 +7,7 @@
  *
  * Usage:
  *   npx tsx scripts/remote-agent.ts              # localhost:7331
- *   npx tsx scripts/remote-agent.ts 192.168.7.101 # HOST:7331
+ *   npx tsx scripts/remote-agent.ts 192.168.1.x # HOST:7331
  *   npx tsx scripts/remote-agent.ts HOST:PORT     # custom port
  */
 

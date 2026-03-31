@@ -41,7 +41,7 @@ function normalizePath(p: string): string {
 /**
  * Encode a filesystem path to the CLI's folder name format.
  * Delegates to the Claude provider for backward compatibility.
- * C:\Users\rbgnr\git\Stream-Lens -> C--Users-rbgnr-git-Stream-Lens
+ * ~/git\Stream-Lens -> C--Users-rbgnr-git-Stream-Lens
  */
 export function encodeFolderName(fsPath: string): string {
   return getCliProvider('claude').encodeFolderName(fsPath);

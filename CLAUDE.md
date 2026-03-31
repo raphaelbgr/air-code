@@ -31,7 +31,7 @@ Share a terminal from any machine into the Air Code web UI:
 
 ```bash
 npx tsx scripts/remote-agent.ts              # connects to localhost:7331
-npx tsx scripts/remote-agent.ts 192.168.7.101 # connects to HOST:7331
+npx tsx scripts/remote-agent.ts 192.168.1.x # connects to HOST:7331
 npx tsx scripts/remote-agent.ts HOST:PORT     # custom port
 ```
 

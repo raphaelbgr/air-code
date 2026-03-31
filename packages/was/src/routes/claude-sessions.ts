@@ -15,7 +15,7 @@ function paramStr(req: AuthenticatedRequest, name: string): string {
 
 /**
  * Decode Claude project folder name to filesystem path.
- * "C--Users-rbgnr-git-foo" -> "C:\Users\rbgnr\git\foo"
+ * "C--Users-rbgnr-git-foo" -> "~/git\foo"
  */
 function decodeProjectFolder(folder: string): string {
   let result = '';

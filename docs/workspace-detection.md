@@ -23,7 +23,7 @@ AI CLI stores project session data in `~/.claude/projects/`. Each project folder
 
 | Original Path | Encoded Folder Name |
 |---|---|
-| `C:\Users\rbgnr\git\stream-lens` | `C--Users-rbgnr-git-stream-lens` |
+| `~/git\stream-lens` | `C--Users-rbgnr-git-stream-lens` |
 
 Rules:
 - Drive letter `C:` becomes `C-` (letter + single dash)
@@ -43,7 +43,7 @@ Rules:
       "created": "2026-02-20T10:00:00.000Z",
       "modified": "2026-02-20T11:30:00.000Z",
       "gitBranch": "main",
-      "projectPath": "C:\\Users\\rbgnr\\git\\stream-lens"
+      "projectPath": "~\\git\\stream-lens"
     }
   ]
 }

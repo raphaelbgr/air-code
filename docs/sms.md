@@ -123,7 +123,7 @@ Base path: `/api/browse`
 ```json
 {
   "name": "my-workspace",
-  "workspacePath": "C:\\Users\\rbgnr\\git\\my-project",
+  "workspacePath": "~\\git\\my-project",
   "type": "cli",
   "backend": "tmux",
   "skipPermissions": false,

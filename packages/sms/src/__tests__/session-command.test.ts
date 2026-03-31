@@ -73,7 +73,7 @@ describe('SessionService command building via providers', () => {
 
   it('provider.encodeFolderName used for project dir', () => {
     const claude = getCliProvider('claude');
-    const folder = claude.encodeFolderName('C:\\Users\\rbgnr\\git\\claude-air-tmux');
+    const folder = claude.encodeFolderName('~\\git\\claude-air-tmux');
     expect(folder).toBe('C--Users-rbgnr-git-claude-air-tmux');
   });
 

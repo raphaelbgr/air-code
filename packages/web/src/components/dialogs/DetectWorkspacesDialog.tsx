@@ -310,7 +310,7 @@ export function DetectWorkspacesDialog({ onClose }: { onClose: () => void }) {
   );
 }
 
-/** Build clickable breadcrumb segments from a path like C:\Users\rbgnr\git */
+/** Build clickable breadcrumb segments from a path like ~/git */
 function buildBreadcrumbs(fullPath: string): { label: string; path: string }[] {
   // Handle Windows paths (C:\foo\bar) and Unix paths (/foo/bar)
   const sep = fullPath.includes('\\') ? '\\' : '/';

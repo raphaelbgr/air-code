@@ -110,7 +110,7 @@ describe('Claude Provider', () => {
       const paths = [
         'D:\\Projects\\MyApp',
         'F:\\Raphael\\Backups\\Aline',
-        'C:\\Users\\rbgnr\\git\\StreamLens',
+        '~\\git\\StreamLens',
       ];
       for (const path of paths) {
         const encoded = claude.encodeFolderName(path);
@@ -122,7 +122,7 @@ describe('Claude Provider', () => {
     it('decode is lossy for paths with hyphens (known limitation)', () => {
       // Hyphens in the original path are indistinguishable from path separators
       // after encoding, so decoding is lossy. This matches the existing behavior.
-      const path = 'C:\\Users\\rbgnr\\git\\claude-air-tmux';
+      const path = '~\\git\\claude-air-tmux';
       const encoded = claude.encodeFolderName(path);
       expect(encoded).toBe('C--Users-rbgnr-git-claude-air-tmux');
       const decoded = claude.decodeFolderName(encoded);
