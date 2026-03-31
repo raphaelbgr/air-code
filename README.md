@@ -4,6 +4,21 @@ A web-based canvas for managing multiple AI CLI terminal sessions. Organize sess
 
 ![Air Code Screenshot](docs/screenshot.png)
 
+## Why This Exists
+
+AI CLI tools like Claude Code and Gemini CLI are powerful, but working with them at scale exposes a fundamental UX gap: **they are single-session, single-window tools in a multi-context world.**
+
+### Pain Points Solved
+
+- **Context switching overload** — Jumping between 5+ terminal tabs to track different AI sessions is mentally expensive. Air Code puts them all on one visual canvas so you see everything at once.
+- **Session blindness** — There is no way to tell at a glance which sessions are idle, running, or stuck. Air Code shows live status on each card without you having to focus each window.
+- **Lost conversation threads** — When a tmux session exits or a terminal window closes, the conversation history is gone. Air Code persists sessions in SQLite and can reopen them.
+- **No branching without pain** — Testing a different approach means either clobbering your current session or manually duplicating it in a new tab. The fork feature clones an active session in one click.
+- **Collaboration dead end** — AI sessions are personal by default. Multi-user presence lets teammates see which sessions are active and who is looking at what, in real time.
+- **Project context scattered** — Figuring out which session belongs to which project requires reading terminal titles or paths. Workspace detection auto-groups sessions by Claude project directory.
+- **Windows + WSL friction** — Running tmux-backed AI CLIs on Windows requires WSL, and every path conversion is a footgun. Air Code handles the `C:\` ↔ `/mnt/c/` translation automatically.
+- **Remote terminal dead zone** — Connecting an AI agent running on another machine into your local UI is not natively possible. The remote agent script bridges any machine directly into the canvas.
+
 ## Features
 
 - **Canvas-based session management** — Drag, resize, and organize session cards within workspace bubbles
