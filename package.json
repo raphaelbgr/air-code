@@ -1,5 +1,25 @@
 {
   "name": "air-code",
+  "version": "0.1.0",
+  "description": "Web-based canvas for managing multiple AI coding agent terminal sessions with real-time streaming, workspace organization, and session forking",
+  "author": "Raphael Bernardo <raphaelbgr@gmail.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/raphaelbgr/air-code.git"
+  },
+  "keywords": [
+    "claude-code",
+    "ai-agent",
+    "terminal",
+    "session-manager",
+    "canvas",
+    "xterm",
+    "websocket",
+    "tmux",
+    "developer-tools",
+    "react"
+  ],
   "private": true,
   "scripts": {
     "dev": "concurrently --kill-others -n sms,was -c blue,green \"pnpm --filter @air-code/sms dev\" \"pnpm --filter @air-code/was dev\"",
